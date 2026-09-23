@@ -9,11 +9,11 @@ henüz doğrulanmamıştır (bkz. proje README'sindeki "test edilmesi gerekenler
 """
 
 import os
-from typing import Callable, Optional
+from typing import Optional
 
 import torch
 
-from providers.base import VideoProvider
+from providers.base import StatusCallback, VideoProvider
 
 I2V_MODEL_ID = os.environ.get("WAN_I2V_MODEL_ID", "Wan-AI/Wan2.1-I2V-14B-480P")
 # T2V için varsayılan olarak bilinçli şekilde KÜÇÜK (1.3B) modeli seçtik:
@@ -64,7 +64,7 @@ class WanProvider(VideoProvider):
         self._t2v_pipeline = None
 
     # -- Image-to-Video ----------------------------------------------------
-    def _get_i2v_pipeline(self):
+    def _get_i2v_pipeline(self, status_callback: Optional[StatusCallback] = None):
         if self._i2v_pipeline is not None:
             return self._i2v_pipeline
 
@@ -77,6 +77,8 @@ class WanProvider(VideoProvider):
 
         from diffusers import WanImageToVideoPipeline, AutoencoderKLWan
 
+        if status_callback:
+            status_callback("model_loading", None, "Wan I2V modeli yükleniyor")
         dtype = torch.bfloat16
         vae = AutoencoderKLWan.from_pretrained(I2V_MODEL_ID, subfolder="vae", torch_dtype=torch.float32)
         pipe = WanImageToVideoPipeline.from_pretrained(I2V_MODEL_ID, vae=vae, torch_dtype=dtype)
@@ -86,7 +88,7 @@ class WanProvider(VideoProvider):
         return pipe
 
     # -- Text-to-Video (YENİ, doğrulanmamış) --------------------------------
-    def _get_t2v_pipeline(self):
+    def _get_t2v_pipeline(self, status_callback: Optional[StatusCallback] = None):
         if self._t2v_pipeline is not None:
             return self._t2v_pipeline
 
@@ -99,6 +101,8 @@ class WanProvider(VideoProvider):
 
         from diffusers import WanPipeline, AutoencoderKLWan
 
+        if status_callback:
+            status_callback("model_loading", None, "Wan T2V modeli yükleniyor")
         dtype = torch.bfloat16
         vae = AutoencoderKLWan.from_pretrained(T2V_MODEL_ID, subfolder="vae", torch_dtype=torch.float32)
         pipe = WanPipeline.from_pretrained(T2V_MODEL_ID, vae=vae, torch_dtype=dtype)
@@ -117,27 +121,31 @@ class WanProvider(VideoProvider):
         num_frames: int,
         num_inference_steps: int,
         image_path: Optional[str] = None,
-        progress_callback: Optional[Callable[[int], None]] = None,
+        status_callback: Optional[StatusCallback] = None,
         fps: int = 16,
     ) -> str:
         from PIL import Image
         import imageio
 
         def _step_callback(pipe, step_index, timestep, callback_kwargs):
-            if progress_callback:
-                pct = 5 + int(85 * (step_index + 1) / num_inference_steps)
-                progress_callback(min(pct, 90))
+            if status_callback:
+                pct = int(100 * (step_index + 1) / num_inference_steps)
+                status_callback(
+                    "generating",
+                    min(pct, 100),
+                    f"Diffusion adımı {step_index + 1}/{num_inference_steps}",
+                )
             return callback_kwargs
 
-        if progress_callback:
-            progress_callback(2)
+        if status_callback:
+            status_callback("queued", None, "GPU sırası bekleniyor")
 
         try:
             if image_path is not None:
-                pipeline = self._get_i2v_pipeline()
+                pipeline = self._get_i2v_pipeline(status_callback)
                 image = Image.open(image_path).convert("RGB").resize((width, height))
-                if progress_callback:
-                    progress_callback(5)
+                if status_callback:
+                    status_callback("generating", 0, "Wan I2V inference başladı")
                 result = pipeline(
                     image=image,
                     prompt=prompt,
@@ -150,9 +158,9 @@ class WanProvider(VideoProvider):
                     callback_on_step_end=_step_callback,
                 )
             else:
-                pipeline = self._get_t2v_pipeline()
-                if progress_callback:
-                    progress_callback(5)
+                pipeline = self._get_t2v_pipeline(status_callback)
+                if status_callback:
+                    status_callback("generating", 0, "Wan T2V inference başladı")
                 result = pipeline(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
@@ -172,12 +180,9 @@ class WanProvider(VideoProvider):
 
         frames = result.frames[0]
 
-        if progress_callback:
-            progress_callback(92)
+        if status_callback:
+            status_callback("encoding", None, "Kareler MP4 videosuna kodlanıyor")
 
         imageio.mimsave(output_path, frames, fps=fps, codec="libx264", quality=8)
-
-        if progress_callback:
-            progress_callback(100)
 
         return output_path

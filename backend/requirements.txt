@@ -18,6 +18,8 @@ diffusers>=0.35.1
 transformers>=4.51.0
 accelerate>=0.34.0
 safetensors>=0.4.5
+huggingface_hub>=0.24.0
+torchao
 sentencepiece==0.2.0
 ftfy==6.2.3
 

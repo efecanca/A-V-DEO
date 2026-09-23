@@ -1,9 +1,9 @@
-# Kehribar Video - Backend (AI GPU sunucusu) — v2
+# FPRO AI - Backend (AI GPU sunucusu) — v2
 
 FastAPI tabanlı bu backend, herhangi bir ürün fotoğrafını (yalnızca eşarp
-değil) veya bir metin promptunu kısa bir videoya dönüştürür. Model,
-`providers/` altında soyutlanmıştır (bkz. "Mimari" bölümü); şu an tek
-sağlayıcı **Wan** ailesi (`diffusers` üzerinden), CUDA GPU'da çalışır.
+değil) kısa bir videoya dönüştürür. Model, `providers/` altında
+soyutlanmıştır (bkz. "Mimari" bölümü); Colab varsayılanı
+**CogVideoX-5B-I2V + TorchAO INT8**'dir ve CUDA GPU'da çalışır.
 Android cihazın GPU'su hiçbir zaman kullanılmaz.
 
 ## Yerel / kendi GPU sunucunuzda çalıştırma
@@ -13,7 +13,7 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 
-# 1) Önce PyTorch'u CUDA sürümünüze göre kurun (torch>=2.4.0 şart, Wan bunu gerektirir):
+# 1) Önce PyTorch'u CUDA sürümünüze göre kurun:
 pip install "torch>=2.4.0" torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # 2) Sonra geri kalan bağımlılıkları kurun:
@@ -46,7 +46,8 @@ backend/
   job_manager.py           -> bellek içi iş (job) durumu, artık sahne/ürün metadatası da tutuyor
   providers/
     base.py                 -> VideoProvider soyut arayüzü
-    wan_provider.py          -> Wan I2V (test edilmiş) + Wan T2V (YENİ, doğrulanmamış)
+    cogvideox_provider.py    -> CogVideoX-5B-I2V + üç bileşende INT8 + CPU offload
+    wan_provider.py          -> Alternatif Wan I2V/T2V provider'ı
     registry.py              -> sağlayıcı kayıt defteri (yeni model eklemek buraya bir satır)
   main.py                    -> FastAPI uçları, sahne bölme/birleştirme orkestrasyonu
 ```
@@ -54,6 +55,11 @@ backend/
 Yeni bir model/sağlayıcı eklemek isterseniz: `providers/` altına
 `VideoProvider`'dan türeyen bir sınıf yazıp `registry.py`'a eklemeniz yeterli;
 `main.py` ve Android tarafı değişmeden kalır.
+
+Her job `queued`, `model_downloading`, `model_loading`, `quantizing`,
+`generating`, `encoding`, `completed` veya `failed` aşamasını taşır. Yüzde
+yalnızca diffusion adımlarında hesaplanır; süre tahmini yapılamayan model
+hazırlama aşamalarında `progress: null` döner.
 
 ## Uç noktalar
 

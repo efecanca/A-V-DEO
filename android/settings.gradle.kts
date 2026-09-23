@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Kehribar Video"
+rootProject.name = "FPRO AI"
 include(":app")

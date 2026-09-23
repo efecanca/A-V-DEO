@@ -28,10 +28,13 @@ class JobManager:
 
             job = {
                 "status": "queued",
-                "progress": 0,
+                "stage": "queued",
+                "stage_detail": "GPU sırası bekleniyor",
+                "progress": None,
                 "video_url": None,
                 "error": None,
                 "created_at": time.time(),
+                "updated_at": time.time(),
                 "scenes_completed": 0,
                 "scenes_total": metadata.get("scenes_total", 1),
                 "actual_duration_seconds": None,
@@ -43,6 +46,7 @@ class JobManager:
     def update_job(self, job_id: str, **fields: Any) -> None:
         with self._lock:
             if job_id in self._jobs:
+                fields["updated_at"] = time.time()
                 self._jobs[job_id].update(fields)
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:

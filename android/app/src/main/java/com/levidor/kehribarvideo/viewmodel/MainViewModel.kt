@@ -46,7 +46,9 @@ data class MainUiState(
     val options: GenerationOptions = GenerationOptions(),
     val capabilities: CapabilitiesResponse? = null,
     val phase: GenerationPhase = GenerationPhase.IDLE,
-    val progress: Int = 0,
+    val stage: String? = null,
+    val stageDetail: String? = null,
+    val progress: Int? = null,
     val localVideoFile: File? = null,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
@@ -123,15 +125,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val absoluteUrl = if (videoUrl.startsWith("http")) videoUrl else baseUrl.trimEnd('/') + videoUrl
                                 val localFile = FileUtils.downloadVideoToCache(context, absoluteUrl, record.jobId)
                                 jobHistoryRepository.addOrUpdate(
-                                    record.copy(status = "completed", progress = 100, localVideoPath = localFile.absolutePath)
+                                    record.copy(
+                                        status = "completed",
+                                        stage = "completed",
+                                        stageDetail = status.stage_detail,
+                                        progress = 100,
+                                        localVideoPath = localFile.absolutePath
+                                    )
                                 )
                             }
                         }
                         "failed" -> jobHistoryRepository.addOrUpdate(
-                            record.copy(status = "failed", errorMessage = status.error)
+                            record.copy(
+                                status = "failed",
+                                stage = "failed",
+                                stageDetail = status.stage_detail,
+                                progress = null,
+                                errorMessage = status.error
+                            )
                         )
                         else -> jobHistoryRepository.addOrUpdate(
-                            record.copy(status = status.status, progress = status.progress ?: record.progress)
+                            record.copy(
+                                status = status.status,
+                                stage = status.stage ?: record.stage,
+                                stageDetail = status.stage_detail ?: record.stageDetail,
+                                progress = if (status.stage != null) {
+                                    status.progress
+                                } else {
+                                    status.progress ?: record.progress
+                                }
+                            )
                         )
                     }
                 } catch (_: Exception) {
@@ -192,7 +215,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 phase = GenerationPhase.UPLOADING,
-                progress = 0,
+                stage = "uploading",
+                stageDetail = null,
+                progress = null,
                 errorMessage = null,
                 infoMessage = null,
                 localVideoFile = null
@@ -241,7 +266,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             durationSeconds = opts.durationSeconds,
                             aspectRatio = opts.aspectRatio,
                             status = "queued",
-                            progress = 0
+                            stage = "queued",
+                            stageDetail = null,
+                            progress = null
                         )
                     )
                     val isPrimary = idx == 0
@@ -251,10 +278,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (jobIds.size > 1) {
                     _uiState.value = _uiState.value.copy(
                         phase = GenerationPhase.QUEUED,
+                        stage = "queued",
+                        stageDetail = null,
+                        progress = null,
                         infoMessage = "${jobIds.size} video sıraya alındı. İlerlemeyi Sonuçlar sekmesinden takip edebilirsiniz."
                     )
                 } else {
-                    _uiState.value = _uiState.value.copy(phase = GenerationPhase.QUEUED)
+                    _uiState.value = _uiState.value.copy(
+                        phase = GenerationPhase.QUEUED,
+                        stage = "queued",
+                        stageDetail = null,
+                        progress = null
+                    )
                 }
             } catch (e: java.net.UnknownHostException) {
                 fail("Sunucuya ulaşılamıyor. Ayarlar'dan sunucu adresini kontrol edin.")
@@ -280,7 +315,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<android.app.Application>()
 
         if (isPrimary) {
-            _uiState.value = _uiState.value.copy(phase = GenerationPhase.PROCESSING)
+            _uiState.value = _uiState.value.copy(
+                phase = GenerationPhase.QUEUED,
+                stage = "queued",
+                stageDetail = null,
+                progress = null
+            )
         }
 
         var consecutiveConnectionFailures = 0
@@ -317,43 +357,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             when (status.status) {
                 "queued", "processing" -> {
-                    val pct = status.progress ?: 0
-                    updateHistoryStatus(jobId, status.status, pct)
+                    val effectiveStage = status.stage ?: if (status.status == "queued") {
+                        "queued"
+                    } else {
+                        "generating"
+                    }
+                    updateHistoryStatus(
+                        jobId = jobId,
+                        status = status.status,
+                        stage = effectiveStage,
+                        stageDetail = status.stage_detail,
+                        progress = status.progress
+                    )
                     if (isPrimary) {
                         _uiState.value = _uiState.value.copy(
                             phase = if (status.status == "queued") GenerationPhase.QUEUED else GenerationPhase.PROCESSING,
-                            progress = pct
+                            stage = effectiveStage,
+                            stageDetail = status.stage_detail,
+                            progress = status.progress
                         )
                     }
                 }
                 "completed" -> {
                     val videoUrl = status.video_url
                     if (videoUrl == null) {
-                        updateHistoryStatus(jobId, "failed", 0, errorMessage = "Sunucu video adresi göndermedi.")
+                        updateHistoryStatus(
+                            jobId,
+                            "failed",
+                            "failed",
+                            null,
+                            null,
+                            errorMessage = "Sunucu video adresi göndermedi."
+                        )
                         if (isPrimary) fail("Sunucu tamamlandı dedi ama video adresi göndermedi.")
                         return
                     }
                     try {
                         val absoluteUrl = if (videoUrl.startsWith("http")) videoUrl else baseUrl.trimEnd('/') + videoUrl
                         val localFile = FileUtils.downloadVideoToCache(context, absoluteUrl, jobId)
-                        updateHistoryStatus(jobId, "completed", 100, localVideoPath = localFile.absolutePath)
+                        updateHistoryStatus(
+                            jobId,
+                            "completed",
+                            "completed",
+                            status.stage_detail,
+                            100,
+                            localVideoPath = localFile.absolutePath
+                        )
                         if (isPrimary) {
                             _uiState.value = _uiState.value.copy(
                                 phase = GenerationPhase.COMPLETED,
+                                stage = "completed",
+                                stageDetail = status.stage_detail,
                                 progress = 100,
                                 localVideoFile = localFile
                             )
                         }
                     } catch (e: Exception) {
                         val msg = "Video indirilemedi: ${e.message ?: "bilinmeyen hata"}"
-                        updateHistoryStatus(jobId, "failed", 0, errorMessage = msg)
+                        updateHistoryStatus(jobId, "failed", "failed", null, null, errorMessage = msg)
                         if (isPrimary) fail(msg)
                     }
                     return
                 }
                 "failed" -> {
                     val msg = status.error ?: "Video üretimi başarısız oldu."
-                    updateHistoryStatus(jobId, "failed", 0, errorMessage = msg)
+                    updateHistoryStatus(
+                        jobId,
+                        "failed",
+                        "failed",
+                        status.stage_detail,
+                        null,
+                        errorMessage = msg
+                    )
                     if (isPrimary) fail(msg)
                     return
                 }
@@ -364,7 +439,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun updateHistoryStatus(
         jobId: String,
         status: String,
-        progress: Int,
+        stage: String?,
+        stageDetail: String?,
+        progress: Int?,
         localVideoPath: String? = null,
         errorMessage: String? = null
     ) {
@@ -372,6 +449,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         jobHistoryRepository.addOrUpdate(
             current.copy(
                 status = status,
+                stage = stage,
+                stageDetail = stageDetail,
                 progress = progress,
                 localVideoPath = localVideoPath ?: current.localVideoPath,
                 errorMessage = errorMessage
@@ -382,6 +461,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun fail(message: String) {
         _uiState.value = _uiState.value.copy(
             phase = GenerationPhase.FAILED,
+            stage = "failed",
+            stageDetail = null,
+            progress = null,
             errorMessage = message
         )
     }

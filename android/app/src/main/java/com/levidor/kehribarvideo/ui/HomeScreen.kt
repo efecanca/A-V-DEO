@@ -51,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.levidor.kehribarvideo.R
+import com.levidor.kehribarvideo.data.generationStageLabel
 import com.levidor.kehribarvideo.util.FileUtils
 import com.levidor.kehribarvideo.viewmodel.GenerationPhase
 import com.levidor.kehribarvideo.viewmodel.MainViewModel
@@ -181,17 +182,24 @@ fun HomeScreen(
 
             if (isBusy) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val label = when (state.phase) {
-                        GenerationPhase.UPLOADING -> "Fotoğraf yükleniyor..."
-                        GenerationPhase.QUEUED -> "Sırada bekleniyor..."
-                        GenerationPhase.PROCESSING -> "Video oluşturuluyor... %${state.progress}"
-                        else -> ""
-                    }
+                    val label = generationStageLabel(state.stage, state.progress)
                     Text(label, style = MaterialTheme.typography.bodyMedium)
-                    LinearProgressIndicator(
-                        progress = { (state.progress.coerceIn(0, 100)) / 100f },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    state.stageDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                        Text(
+                            detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    val realProgress = state.progress
+                    if (realProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { realProgress.coerceIn(0, 100) / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
                 }
             }
 

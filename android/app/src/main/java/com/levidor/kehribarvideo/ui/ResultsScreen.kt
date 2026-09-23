@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.levidor.kehribarvideo.data.JobRecord
+import com.levidor.kehribarvideo.data.generationStageLabel
 import com.levidor.kehribarvideo.data.optionLabel
 import com.levidor.kehribarvideo.util.FileUtils
 import com.levidor.kehribarvideo.viewmodel.MainViewModel
@@ -130,7 +131,21 @@ private fun JobHistoryCard(record: JobRecord, expanded: Boolean, onToggleExpand:
                 )
             }
             if (record.status == "processing" || record.status == "queued") {
-                Text("%${record.progress}", style = MaterialTheme.typography.bodyMedium)
+                val stage = record.stage ?: if (record.status == "queued") "queued" else "generating"
+                Text(
+                    generationStageLabel(stage, record.progress),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        if (record.status == "processing" || record.status == "queued") {
+            record.stageDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
             }
         }
 

@@ -1,5 +1,5 @@
 """
-Kehribar Video - AI Backend (FastAPI)
+FPRO AI - Video Backend (FastAPI)
 
 v2: Artık tek bir "eşarp" kategorisine özel değildir; herhangi bir ürün
 fotoğrafını (veya prompt'u, text-to-video modunda) kısa bir videoya
@@ -38,10 +38,9 @@ BİREBİR AYNI davranışı korumak üzere temkinli varsayılanlar kullanılır)
 """
 
 import asyncio
+import logging
 import os
 import shutil
-import traceback
-import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -53,8 +52,11 @@ from starlette.concurrency import run_in_threadpool
 import capabilities
 from ffmpeg_utils import concat_video_clips
 from job_manager import job_manager
+from job_progress import overall_generation_progress
 from prompt_builder import build_prompt
 from providers.registry import get_provider
+
+logger = logging.getLogger("uvicorn.error")
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "storage" / "uploads"
@@ -62,9 +64,11 @@ OUTPUT_DIR = BASE_DIR / "storage" / "outputs"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-FPS = int(os.environ.get("WAN_FPS", "16"))
+# CogVideoX-5B-I2V'nin resmi oynatma hızı 8 FPS'tir. Eski WAN_FPS değişkeni
+# geriye uyumluluk için okunmaya devam eder.
+FPS = int(os.environ.get("VIDEO_FPS", os.environ.get("WAN_FPS", "8")))
 
-app = FastAPI(title="Kehribar Video Backend")
+app = FastAPI(title="FPRO AI Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,6 +79,10 @@ app.add_middleware(
 
 app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
 
+# asyncio yalnızca zayıf task referansları tutar. Uzun model indirme/inference
+# işleri çöp toplayıcı tarafından erken bırakılmasın diye tamamlanana dek sakla.
+_background_tasks: set[asyncio.Task] = set()
+
 
 @app.get("/health")
 def health():
@@ -83,7 +91,12 @@ def health():
 
 @app.get("/capabilities")
 def get_capabilities():
-    return capabilities.get_capabilities_payload(fps=FPS)
+    payload = capabilities.get_capabilities_payload(fps=FPS)
+    provider = get_provider()
+    payload["provider"] = provider.name
+    if provider.name == "cogvideox":
+        payload["modes"] = ["image_to_video"]
+    return payload
 
 
 @app.get("/jobs")
@@ -223,7 +236,7 @@ async def _create_and_launch_job(
 
     output_path = OUTPUT_DIR / f"{job_id}.mp4"
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_job(
             job_id=job_id,
             image_paths=saved_image_paths,
@@ -238,6 +251,8 @@ async def _create_and_launch_job(
             output_path=str(output_path),
         )
     )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return job_id
 
@@ -255,8 +270,16 @@ async def _run_job(
     scene_seconds: float,
     output_path: str,
 ):
-    job_manager.update_job(job_id, status="processing", progress=0, scenes_completed=0)
     provider = get_provider()
+    logger.info(
+        "[JOB %s] oluşturuldu: provider=%s, sahne=%s, çözünürlük=%sx%s, adım=%s",
+        job_id,
+        provider.name,
+        num_scenes,
+        width,
+        height,
+        num_inference_steps,
+    )
 
     scene_paths: List[str] = []
     try:
@@ -265,9 +288,37 @@ async def _run_job(
             if image_paths:
                 image_path = image_paths[scene_index % len(image_paths)]
 
-            def progress_cb(pct: int, _scene_index=scene_index):
-                overall = int(((_scene_index + pct / 100.0) / num_scenes) * 100)
-                job_manager.update_job(job_id, status="processing", progress=min(overall, 99))
+            def status_cb(
+                stage: str,
+                progress: Optional[int],
+                detail: Optional[str],
+                _scene_index=scene_index,
+            ) -> None:
+                # Model indirme/yükleme/quantization/encoding sürelerinden güvenilir
+                # bir yüzde çıkarılamaz. Yalnızca provider'ın gerçek diffusion adımı
+                # verdiği "generating" aşamasını toplam iş yüzdesine dönüştürüyoruz.
+                overall_progress = overall_generation_progress(
+                    stage,
+                    progress,
+                    _scene_index,
+                    num_scenes,
+                )
+
+                status = "queued" if stage == "queued" else "processing"
+                job_manager.update_job(
+                    job_id,
+                    status=status,
+                    stage=stage,
+                    stage_detail=detail,
+                    progress=overall_progress,
+                )
+                logger.info(
+                    "[JOB %s] aşama=%s ilerleme=%s ayrıntı=%s",
+                    job_id,
+                    stage,
+                    overall_progress if overall_progress is not None else "ölçülemiyor",
+                    detail or "-",
+                )
 
             scene_output = str(Path(output_path).with_name(f"{job_id}_scene_{scene_index}.mp4"))
 
@@ -281,27 +332,41 @@ async def _run_job(
                 frames_per_scene,
                 num_inference_steps,
                 image_path,
-                progress_cb,
+                status_cb,
                 FPS,
             )
             scene_paths.append(scene_output)
             job_manager.update_job(job_id, scenes_completed=scene_index + 1)
 
+        job_manager.update_job(
+            job_id,
+            status="processing",
+            stage="encoding",
+            stage_detail="Video sahneleri birleştiriliyor",
+            progress=None,
+        )
+        logger.info("[JOB %s] video sahneleri birleştiriliyor", job_id)
         await run_in_threadpool(concat_video_clips, scene_paths, output_path)
 
         video_name = os.path.basename(output_path)
         job_manager.update_job(
             job_id,
             status="completed",
+            stage="completed",
+            stage_detail="Video hazır",
             progress=100,
             video_url=f"/videos/{video_name}",
             actual_duration_seconds=round(num_scenes * scene_seconds, 2),
         )
+        logger.info("[JOB %s] tamamlandı: %s", job_id, output_path)
     except Exception as exc:
-        traceback.print_exc()
+        logger.exception("[JOB %s] video üretimi başarısız oldu", job_id)
         job_manager.update_job(
             job_id,
             status="failed",
+            stage="failed",
+            stage_detail=str(exc),
+            progress=None,
             error=f"Video üretimi başarısız oldu: {exc}",
         )
     finally:
@@ -326,7 +391,9 @@ def status(job_id: str):
         raise HTTPException(status_code=404, detail="job_id bulunamadı.")
     return {
         "status": job["status"],
-        "progress": job.get("progress", 0),
+        "stage": job.get("stage"),
+        "stage_detail": job.get("stage_detail"),
+        "progress": job.get("progress"),
         "video_url": job.get("video_url"),
         "error": job.get("error"),
         "scenes_completed": job.get("scenes_completed", 0),
@@ -336,4 +403,5 @@ def status(job_id: str):
         "quality": job.get("quality"),
         "aspect_ratio": job.get("aspect_ratio"),
         "product_count": job.get("product_count", 1),
+        "updated_at": job.get("updated_at"),
     }

@@ -1,8 +1,8 @@
-# Kehribar Video (v2)
+# FPRO AI (v2)
 
 Herhangi bir ürün fotoğrafını (eşarp, çanta, tekstil, ileride başka moda
-ürünleri) uzak bir GPU backend'i (Wan ailesi, sağlayıcı soyutlaması
-üzerinden) ile kısa bir tanıtım videosuna dönüştüren Android uygulaması +
+ürünleri) uzak bir GPU backend'i (Colab T4 üzerinde CogVideoX-5B-I2V +
+TorchAO INT8) ile kısa bir tanıtım videosuna dönüştüren Android uygulaması +
 backend. v2 ile artık: Fotoğraftan/Metinden Video modu, ayarlanabilir
 süre/format/kalite/hareket/kamera, hazır stil presetleri, çoklu ürün +
 15 saniyelik reklam modu, ve kalıcı bir "Sonuçlar" geçmişi ekleniyor.
@@ -10,7 +10,7 @@ süre/format/kalite/hareket/kamera, hazır stil presetleri, çoklu ürün +
 ```
 KehribarVideo/
 ├── android/    -> Android Studio projesi (Kotlin + Jetpack Compose)
-├── backend/    -> FastAPI + Wan I2V (CUDA GPU üzerinde çalışır)
+├── backend/    -> FastAPI + CogVideoX-5B-I2V INT8 (CUDA GPU üzerinde çalışır)
 ├── colab/      -> Google Colab GPU kurulum notebook'u
 └── .github/workflows/build-apk.yml -> GitHub Actions ile otomatik APK derleme
 ```
@@ -21,7 +21,7 @@ KehribarVideo/
 Debug APK'yı derler ve indirilebilir bir artifact olarak yayınlar:
 
 1. GitHub'da **Actions → Build Debug APK** sayfasını açın.
-2. En yeni yeşil çalıştırmayı açıp "kehribar-video-debug-apk" adlı artifact'i
+2. En yeni yeşil çalıştırmayı açıp "fpro-ai-debug-apk" adlı artifact'i
    indirin — debug APK içindedir.
 3. İsterseniz Android Studio'da `android/` klasörünü açıp **Run** ile de
    derleyebilirsiniz.
@@ -37,8 +37,9 @@ Debug APK'yı derler ve indirilebilir bir artifact olarak yayınlar:
    basın. `Bağlı ✓` görülmeden üretime başlamayın.
 4. Ana ekranda ürün fotoğrafı seçin (veya "Metinden Video" moduna geçip
    yalnızca prompt yazın), süre/format/kalite/hareket/kamera/stil
-   seçeneklerini ayarlayın, **Video Oluştur**'a basın. İlerleme yüzdesi
-   görünür; bitince video uygulama içinde oynar, **Kaydet** ile galeriye,
+   seçeneklerini ayarlayın, **Video Oluştur**'a basın. Model indirme/yükleme,
+   INT8 quantization, üretim ve kodlama aşamaları görünür; gerçek diffusion
+   yüzdesi yalnızca hesaplanabildiğinde gösterilir. Bitince video uygulama içinde oynar, **Kaydet** ile galeriye,
    **Paylaş** ile istediğiniz uygulamaya gönderebilirsiniz.
 5. Sağ üstteki 📣 ikonu **Reklam Videosu** modunu açar: birden fazla ürün
    fotoğrafı seçip ya TEK bir çok-sahneli reklam videosunda ya da her ürün
@@ -61,13 +62,10 @@ durdurulursa ngrok tüneli de kapanır. Tünel kopup yeniden kurulursa notebook
 
 ## v2'de test edilmiş / edilmemiş olanlar (lütfen okuyun)
 
-- **Backend mantığı** (capabilities, çoklu sahne + FFmpeg birleştirme, reklam
-  modu, toplu mod, eski istemciyle geri uyumluluk, GPU'ya göre otomatik
-  kombinasyon reddi): gerçek GPU olmadan `torch`/`diffusers` sahte modüllerle
-  uçtan uca test edildi (tüm HTTP akışları ve durum geçişleri doğru çalıştı).
-  **Gerçek Wan modeliyle, gerçek bir GPU'da henüz doğrulanmadı** — bir
-  sonraki adım bu olmalı.
-- **Text-to-Video modu tamamen yeni ve hiç çalıştırılmadı.**
+- **Backend durum mantığı** ölçülemeyen aşamalara sahte yüzde vermemek ve gerçek
+  diffusion yüzdesini çoklu sahnelere yaymak için birim testleriyle doğrulanır.
+- Varsayılan Colab provider'ı yalnızca **CogVideoX-5B-I2V** modunu ilan eder;
+  desteklenmeyen Text-to-Video seçeneği Android'e sunulmaz.
 - **Android tarafı** GitHub Actions ile otomatik test edilip Debug APK olarak
   derlenir. Gerçek telefonda kamera/galeri seçimi ve uzun üretim sırasında
   mobil ağ geçişleri ayrıca denenmelidir.
@@ -78,11 +76,10 @@ durdurulursa ngrok tüneli de kapanır. Tünel kopup yeniden kurulursa notebook
 
 - Video kısa (~2 sn / 33 kare) ve 480p'dir; amaç kaliteden önce sağlam/öngörülebilir
   bir uçtan uca akış kurmaktır.
-- **Wan2.1-I2V-14B modeli, ücretsiz Colab T4'e (16GB) ancak "sequential CPU
-  offload" ile sığar; bu mod OOM'u önler ama tek bir video onlarca dakika
-  sürebilir.** Daha hızlı sonuç için Colab Pro'da L4/A100 gibi ≥24GB VRAM'li
-  bir GPU seçip `WAN_OFFLOAD_MODE=model` yapabilirsiniz (ayrıntı:
-  `backend/README.md`).
+- **CogVideoX-5B-I2V**, text encoder + transformer + VAE için INT8 weight-only
+  quantization ve sequential CPU offload kullanır. İlk model indirmesi,
+  quantization ve T4 inference uzun sürebilir; OOM/uyumluluk hataları Colab
+  hücresinde traceback ve job'ın `failed` ayrıntısı olarak görünür.
 - İş kuyruğu backend'de bellek içi tutulur (basit ve öngörülebilir);
   backend süreci yeniden başlarsa devam eden işler kaybolur.
 - `usesCleartextTraffic="true"` ve tüm alan adlarına açık network security

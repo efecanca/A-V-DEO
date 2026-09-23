@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Kehribar Video</string>
+    <string name="app_name">FPRO AI</string>
     <string name="pick_photo">Fotoğraf Seç</string>
     <string name="pick_photo_hint">Ürün fotoğrafınızı seçmek için dokunun</string>
     <string name="prompt_label">Video açıklaması (prompt)</string>

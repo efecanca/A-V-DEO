@@ -1,4 +1,4 @@
-"""Kehribar Video backend'ini Colab'da başlatır ve ngrok tünelini izler.
+"""FPRO AI backend'ini Colab'da başlatır ve ngrok tünelini izler.
 
 Bu dosya notebook hücresinden çalıştırılır. Hücre çalıştığı sürece FastAPI
 süreci ve herkese açık tünel canlı tutulur; tünel koparsa yeni bir adres
@@ -12,7 +12,9 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
+from importlib import metadata
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -46,6 +48,52 @@ def install_dependencies() -> None:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
 
 
+def show_runtime_info() -> None:
+    """T4 ve model bağımlılıklarını üretim başlamadan Colab çıktısına yaz."""
+    gpu = subprocess.run(
+        [
+            "nvidia-smi",
+            "--query-gpu=name,memory.total,driver_version,compute_cap",
+            "--format=csv,noheader",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    gpu_info = gpu.stdout.strip() or gpu.stderr.strip() or "okunamadı"
+    print(f"GPU runtime: {gpu_info}", flush=True)
+
+    versions = []
+    for package in ("torch", "torchao", "diffusers", "transformers", "accelerate"):
+        try:
+            versions.append(f"{package}={metadata.version(package)}")
+        except metadata.PackageNotFoundError:
+            versions.append(f"{package}=YOK")
+    print("Model paketleri: " + ", ".join(versions), flush=True)
+
+    # TorchAO ile PyTorch sürüm uyuşmazlığı varsa dev model indirmesinden önce
+    # görünür bir traceback üret. Sunucu yine açılır; generate işi aynı hatayı
+    # job'a `failed` olarak da yazar.
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-u",
+            "-c",
+            (
+                "import torch, torchao; "
+                "from torchao.quantization import int8_weight_only, quantize_; "
+                "print('TorchAO INT8 ön kontrolü: OK; CUDA=' + str(torch.cuda.is_available()))"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if probe.stdout.strip():
+        print(probe.stdout.strip(), flush=True)
+    if probe.returncode != 0:
+        print("TorchAO INT8 ön kontrolü BAŞARISIZ:", flush=True)
+        print(probe.stderr.rstrip(), flush=True)
+
+
 def get_ngrok_token() -> str:
     token = os.environ.get("NGROK_AUTHTOKEN", "").strip()
     if not token:
@@ -77,6 +125,9 @@ def start_backend(port: int) -> subprocess.Popen:
     env = os.environ.copy()
     env["WAN_OFFLOAD_MODE"] = "sequential"
     env["COGVIDEO_I2V_MODEL_ID"] = "zai-org/CogVideoX-5b-I2V"
+    env["VIDEO_FPS"] = "8"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONFAULTHANDLER"] = "1"
     return subprocess.Popen(
         [
             sys.executable,
@@ -93,7 +144,26 @@ def start_backend(port: int) -> subprocess.Popen:
         ],
         cwd=BACKEND_DIR,
         env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        errors="replace",
     )
+
+
+def stream_backend_output(process: subprocess.Popen) -> threading.Thread:
+    """Uvicorn/provider stdout+stderr akışını Colab hücresine canlı aktar."""
+
+    def pump() -> None:
+        if process.stdout is None:
+            return
+        for line in iter(process.stdout.readline, ""):
+            print(f"[BACKEND] {line}", end="", flush=True)
+
+    thread = threading.Thread(target=pump, name="backend-log-stream", daemon=True)
+    thread.start()
+    return thread
 
 
 def wait_for_local_backend(process: subprocess.Popen, port: int) -> None:
@@ -181,6 +251,7 @@ def main() -> None:
         raise RuntimeError(f"Backend bulunamadı: {BACKEND_DIR}")
 
     install_dependencies()
+    show_runtime_info()
 
     from pyngrok import ngrok
 
@@ -191,6 +262,7 @@ def main() -> None:
 
     port = find_available_port()
     backend_process = start_backend(port)
+    backend_log_thread = stream_backend_output(backend_process)
     tunnel = None
     current_url: Optional[str] = None
 
@@ -244,6 +316,7 @@ def main() -> None:
                 backend_process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 backend_process.kill()
+        backend_log_thread.join(timeout=2)
 
 
 if __name__ == "__main__":

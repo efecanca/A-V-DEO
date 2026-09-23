@@ -30,7 +30,7 @@ object FileUtils {
                 .header("ngrok-skip-browser-warning", "true")
                 .build()
             val dir = File(context.cacheDir, "videos").apply { mkdirs() }
-            val outFile = File(dir, "kehribar_$jobId.mp4")
+            val outFile = File(dir, "fpro_ai_$jobId.mp4")
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw java.io.IOException("Video indirilemedi: HTTP ${response.code}")
@@ -49,7 +49,7 @@ object FileUtils {
      */
     suspend fun saveVideoToGallery(context: Context, sourceFile: File): Uri =
         withContext(Dispatchers.IO) {
-            val fileName = "KehribarVideo_${System.currentTimeMillis()}.mp4"
+            val fileName = "FPRO_AI_${System.currentTimeMillis()}.mp4"
             val resolver = context.contentResolver
 
             val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -57,7 +57,7 @@ object FileUtils {
                 put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/KehribarVideo")
+                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/FPRO AI")
                     put(MediaStore.Video.Media.IS_PENDING, 1)
                 }
             }

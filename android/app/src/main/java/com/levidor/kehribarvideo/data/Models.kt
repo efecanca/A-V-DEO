@@ -22,6 +22,8 @@ data class GenerateResponse(
  */
 data class StatusResponse(
     val status: String,
+    val stage: String? = null,
+    val stage_detail: String? = null,
     val progress: Int? = null,
     val video_url: String? = null,
     val error: String? = null,
@@ -33,6 +35,24 @@ data class StatusResponse(
     val aspect_ratio: String? = null,
     val product_count: Int? = null
 )
+
+/** Backend aşamasını kullanıcıya gösterilecek Türkçe metne dönüştürür. */
+fun generationStageLabel(stage: String?, progress: Int? = null): String {
+    val label = when (stage) {
+        "uploading" -> "Fotoğraf yükleniyor…"
+        "queued" -> "GPU sırasında bekleniyor…"
+        "model_downloading" -> "Yapay zekâ modeli indiriliyor…"
+        "model_loading" -> "Yapay zekâ modeli yükleniyor…"
+        "quantizing" -> "Model INT8 için optimize ediliyor…"
+        "generating" -> "Video oluşturuluyor…"
+        "encoding" -> "Video kodlanıyor…"
+        "completed" -> "Video hazır"
+        "failed" -> "Video üretimi başarısız oldu"
+        else -> "Video işleniyor…"
+    }
+    val realProgress = progress?.coerceIn(0, 100)
+    return if (realProgress != null) "$label %$realProgress" else label
+}
 
 /**
  * Backend'in GET /capabilities cevabı. Sunucu hangi seçenekleri desteklediğini

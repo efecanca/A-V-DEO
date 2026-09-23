@@ -12,6 +12,9 @@ jobs:
       - name: Kodu al
         uses: actions/checkout@v4
 
+      - name: Backend aşama testlerini çalıştır
+        run: python -m unittest discover -s backend/tests -p 'test_*.py' -v
+
       - name: JDK 17 kur
         uses: actions/setup-java@v4
         with:
@@ -39,7 +42,7 @@ jobs:
       - name: APK'yı Actions çıktısı olarak yükle
         uses: actions/upload-artifact@v4
         with:
-          name: kehribar-video-debug-apk
+          name: fpro-ai-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

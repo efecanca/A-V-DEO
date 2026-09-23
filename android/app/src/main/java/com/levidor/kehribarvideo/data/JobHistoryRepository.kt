@@ -51,7 +51,13 @@ class JobHistoryRepository(private val context: Context) {
                     durationSeconds = o.optInt("durationSeconds", 5),
                     aspectRatio = o.optString("aspectRatio", "16:9"),
                     status = o.optString("status", "processing"),
-                    progress = o.optInt("progress", 0),
+                    stage = o.optString("stage", "").ifBlank { null },
+                    stageDetail = o.optString("stageDetail", "").ifBlank { null },
+                    progress = if (o.has("progress") && !o.isNull("progress")) {
+                        o.getInt("progress")
+                    } else {
+                        null
+                    },
                     localVideoPath = o.optString("localVideoPath", "").ifBlank { null },
                     errorMessage = o.optString("errorMessage", "").ifBlank { null }
                 )
@@ -72,7 +78,9 @@ class JobHistoryRepository(private val context: Context) {
             o.put("durationSeconds", r.durationSeconds)
             o.put("aspectRatio", r.aspectRatio)
             o.put("status", r.status)
-            o.put("progress", r.progress)
+            o.put("stage", r.stage ?: "")
+            o.put("stageDetail", r.stageDetail ?: "")
+            o.put("progress", r.progress ?: JSONObject.NULL)
             o.put("localVideoPath", r.localVideoPath ?: "")
             o.put("errorMessage", r.errorMessage ?: "")
             arr.put(o)
@@ -89,7 +97,9 @@ data class JobRecord(
     val durationSeconds: Int,
     val aspectRatio: String,
     val status: String,
-    val progress: Int,
+    val stage: String? = null,
+    val stageDetail: String? = null,
+    val progress: Int? = null,
     val localVideoPath: String? = null,
     val errorMessage: String? = null
 )

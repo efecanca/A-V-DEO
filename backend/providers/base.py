@@ -10,6 +10,12 @@ from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
 
+# Aşama adı, varsa gerçek yüzde ve insan-okur teknik ayrıntı.
+# Yüzde yalnızca ölçülebilen işlerde (ör. diffusion adımları) gönderilir;
+# model indirme/yükleme/quantization süreleri için None kalır.
+StatusCallback = Callable[[str, Optional[int], Optional[str]], None]
+
+
 class VideoProvider(ABC):
     name: str = "base"
 
@@ -24,13 +30,14 @@ class VideoProvider(ABC):
         num_frames: int,
         num_inference_steps: int,
         image_path: Optional[str] = None,
-        progress_callback: Optional[Callable[[int], None]] = None,
+        status_callback: Optional[StatusCallback] = None,
     ) -> str:
         """
         Tek bir video sahnesi (clip) üretir ve output_path'e MP4 olarak yazar.
 
         image_path verilirse Image-to-Video, None ise Text-to-Video modunda
         çalışılır (sağlayıcı bu modu desteklemiyorsa NotImplementedError fırlatmalı).
-        progress_callback(0-100) ilerleme bildirmek için opsiyoneldir.
+        status_callback(stage, progress, detail) gerçek çalışma aşamasını bildirir.
+        progress yalnızca hesaplanabildiğinde 0-100 aralığında olmalıdır.
         """
         raise NotImplementedError
