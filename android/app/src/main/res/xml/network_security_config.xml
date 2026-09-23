@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Colab/geçici GPU backend adresleri genellikle http (cleartext) veya
+    değişken alt alan adlarıyla (ngrok, localtunnel vb.) gelir.
+    Bu yapılandırma tüm alan adlarına cleartext (http) trafiğe izin verir.
+    Üretimde kendi sunucunuza sabit bir HTTPS adresi bağladığınızda
+    bu ayarı sıkılaştırmanız önerilir.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

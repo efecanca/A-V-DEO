@@ -1,0 +1,3 @@
+# Bu dosyayı local.properties olarak kopyalayıp kendi Android SDK yolunuzu yazın.
+# Android Studio'da normalde bu dosya otomatik oluşturulur, elle düzenlemeniz gerekmez.
+sdk.dir=/path/to/Android/sdk

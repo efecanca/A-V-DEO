@@ -1,0 +1,27 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+pydantic==2.7.4
+
+# --- PyTorch: burada KURULMAZ, ayrı kurun ---
+# Doğru CUDA derlemesi sunucunuzun CUDA sürümüne bağlı olduğu için torch'u
+# bu requirements.txt üzerinden değil, resmi komutla kurun, örn. (CUDA 12.1):
+#   pip install "torch>=2.4.0" torchvision --index-url https://download.pytorch.org/whl/cu121
+# Google Colab'da PyTorch zaten CUDA destekli hazır gelir; orada bu adımı
+# atlayın (bkz. colab/Kehribar_Video_Colab.ipynb).
+# Not: torch < 2.4.0 ile Wan desteği resmi olarak test edilmemiştir.
+
+# Wan Image-to-Video (diffusers, Wan desteğini Mart 2025'te ekledi;
+# diffusers < 0.33 sürümlerinde WanImageToVideoPipeline / AutoencoderKLWan
+# YOKTUR ve "from diffusers import WanImageToVideoPipeline" ImportError verir)
+diffusers>=0.35.1
+transformers>=4.51.0
+accelerate>=0.34.0
+safetensors>=0.4.5
+sentencepiece==0.2.0
+ftfy==6.2.3
+
+imageio==2.35.1
+imageio-ffmpeg==0.5.1
+pillow==10.4.0
+numpy>=1.26.4

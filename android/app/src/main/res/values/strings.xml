@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Kehribar Video</string>
+    <string name="pick_photo">Fotoğraf Seç</string>
+    <string name="pick_photo_hint">Eşarp / model fotoğrafınızı seçmek için dokunun</string>
+    <string name="prompt_label">Video açıklaması (prompt)</string>
+    <string name="generate_button">Video Oluştur</string>
+    <string name="settings_title">Ayarlar</string>
+    <string name="server_url_label">Sunucu (GPU backend) adresi</string>
+    <string name="save_button">Kaydet</string>
+    <string name="share_button">Paylaş</string>
+    <string name="new_video_button">Yeni Video</string>
+</resources>
