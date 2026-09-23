@@ -11,6 +11,9 @@ import retrofit2.http.Path
 
 interface ApiService {
 
+    @GET("health")
+    suspend fun health(): retrofit2.Response<okhttp3.ResponseBody>
+
     @GET("capabilities")
     suspend fun getCapabilities(): CapabilitiesResponse
 
