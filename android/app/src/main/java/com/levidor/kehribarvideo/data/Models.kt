@@ -1,5 +1,10 @@
 package com.levidor.kehribarvideo.data
 
+/** Backend'in GET /health cevabı. */
+data class HealthResponse(
+    val status: String
+)
+
 /**
  * Backend'in POST /generate cevabı.
  * job_ids yalnızca "toplu mod"da (ad_mode kapalı + birden fazla ürün) dolu gelir;

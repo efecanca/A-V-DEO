@@ -27,9 +27,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.levidor.kehribarvideo.R
 import com.levidor.kehribarvideo.data.ApiClient
+import com.levidor.kehribarvideo.data.ServerConnection
 import com.levidor.kehribarvideo.data.SettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,8 +88,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
             Button(onClick = {
                 scope.launch {
-                    repository.setServerUrl(url.trim())
-                    saved = true
+                    saved = false
+                    try {
+                        url = repository.setServerUrl(url)
+                        saved = true
+                        connectionState = "Adres kaydedildi; bağlantıyı test edin."
+                    } catch (e: IllegalArgumentException) {
+                        connectionState = e.message ?: "Sunucu adresi geçersiz."
+                    }
                 }
             }) {
                 Text("Kaydet")
@@ -93,7 +103,49 @@ fun SettingsScreen(onBack: () -> Unit) {
             if (saved) {
                 Text("Kaydedildi ✓")
             }
-            Button(enabled = !testing, onClick = { scope.launch { testing = true; connectionState = "Bağlantı test ediliyor…"; try { repository.setServerUrl(url.trim()); val normalized = if (url.trim().endsWith("/")) url.trim() else url.trim() + "/"; val response = ApiClient.getService(normalized).health(); connectionState = if (response.isSuccessful) "Bağlı ✓" else "Bağlantı yok (HTTP " + response.code() + ")" } catch (e: Exception) { connectionState = "Bağlantı yok" } finally { testing = false } } }) { Text(if (testing) "Test ediliyor…" else "Bağlantıyı Test Et / Yeniden Bağlan") }
+            Button(
+                enabled = !testing,
+                onClick = {
+                    scope.launch {
+                        testing = true
+                        saved = false
+                        connectionState = "Bağlantı test ediliyor…"
+                        try {
+                            val normalized = repository.setServerUrl(url)
+                            url = normalized
+                            saved = true
+
+                            val response = ApiClient.getService(normalized).health()
+                            connectionState = when {
+                                response.isSuccessful &&
+                                    response.body()?.status.equals("ok", ignoreCase = true) ->
+                                    "Bağlı ✓"
+                                response.isSuccessful ->
+                                    "Sunucuya ulaşıldı fakat /health geçerli yanıt vermedi."
+                                else -> ServerConnection.failureMessage(
+                                    statusCode = response.code(),
+                                    ngrokErrorCode = response.headers()["Ngrok-Error-Code"],
+                                    errorBody = response.errorBody()?.string()
+                                )
+                            }
+                        } catch (e: IllegalArgumentException) {
+                            connectionState = e.message ?: "Sunucu adresi geçersiz."
+                        } catch (_: UnknownHostException) {
+                            connectionState = "Sunucu adı bulunamadı. Adresi kontrol edin."
+                        } catch (_: ConnectException) {
+                            connectionState = "Sunucuya bağlanılamadı. Colab çalışıyor mu?"
+                        } catch (_: SocketTimeoutException) {
+                            connectionState = "Sunucu zamanında yanıt vermedi. Tekrar deneyin."
+                        } catch (e: Exception) {
+                            connectionState = "Bağlantı kurulamadı: ${e.message ?: "bilinmeyen hata"}"
+                        } finally {
+                            testing = false
+                        }
+                    }
+                }
+            ) {
+                Text(if (testing) "Test ediliyor…" else "Bağlantıyı Test Et / Yeniden Bağlan")
+            }
             Text("Sunucu durumu: " + connectionState)
         }
     }

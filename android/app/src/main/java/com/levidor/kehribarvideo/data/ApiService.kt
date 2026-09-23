@@ -12,7 +12,7 @@ import retrofit2.http.Path
 interface ApiService {
 
     @GET("health")
-    suspend fun health(): retrofit2.Response<okhttp3.ResponseBody>
+    suspend fun health(): retrofit2.Response<HealthResponse>
 
     @GET("capabilities")
     suspend fun getCapabilities(): CapabilitiesResponse

@@ -15,25 +15,16 @@ KehribarVideo/
 └── .github/workflows/build-apk.yml -> GitHub Actions ile otomatik APK derleme
 ```
 
-## Önemli: APK bu teslimatta yok — neden ve nasıl alınır
+## APK'yı GitHub Actions'tan alma
 
-Bu projeyi hazırladığım ortamın internet erişimi yalnızca birkaç paket
-kayıt sunucusuyla (PyPI, npm, GitHub vb.) sınırlı; Android SDK ve Google'ın
-Maven deposuna (Jetpack/Compose kütüphaneleri buradan iniyor) erişimim yok.
-Bu yüzden APK'yı burada gerçekten derleyip test edemedim — sizi "derledim"
-diye yanıltmak yerine bunu açıkça söylemek istedim.
+`main` dalına her gönderimde GitHub Actions Android birim testlerini çalıştırır,
+Debug APK'yı derler ve indirilebilir bir artifact olarak yayınlar:
 
-Kaynak kodun kendisi eksiksiz ve placeholder içermiyor. Zaten GitHub Actions
-kullandığınızı bildiğim için en pratik yol bu:
-
-1. `android/` klasörünün içeriğini bir GitHub reposuna (repo kökü değil,
-   `android/` klasörünün içi `android/` alt klasörü olarak) push edin —
-   `.github/workflows/build-apk.yml` zaten push'ta otomatik tetiklenir.
-2. Actions sekmesinde iş bitince "kehribar-video-debug-apk" adlı artifact'i
+1. GitHub'da **Actions → Build Debug APK** sayfasını açın.
+2. En yeni yeşil çalıştırmayı açıp "kehribar-video-debug-apk" adlı artifact'i
    indirin — debug APK içindedir.
-3. Android Studio'nuz varsa `android/` klasörünü doğrudan açıp
-   "Run" ile de derleyebilirsiniz (Gradle wrapper jar'ı ilk açılışta
-   Android Studio tarafından otomatik indirilir).
+3. İsterseniz Android Studio'da `android/` klasörünü açıp **Run** ile de
+   derleyebilirsiniz.
 
 ## Hızlı başlangıç
 
@@ -42,7 +33,8 @@ kullandığınızı bildiğim için en pratik yol bu:
    Size bir URL verecek (örn. `https://xxxx.ngrok-free.app/`).
 2. **APK'yı kurun** (yukarıdaki GitHub Actions ya da Android Studio yoluyla).
 3. Uygulamayı açın, sağ üstteki **Ayarlar (⚙)** ikonuna dokunup backend
-   URL'sini yapıştırıp kaydedin.
+   URL'sini yapıştırın ve **Bağlantıyı Test Et / Yeniden Bağlan** düğmesine
+   basın. `Bağlı ✓` görülmeden üretime başlamayın.
 4. Ana ekranda ürün fotoğrafı seçin (veya "Metinden Video" moduna geçip
    yalnızca prompt yazın), süre/format/kalite/hareket/kamera/stil
    seçeneklerini ayarlayın, **Video Oluştur**'a basın. İlerleme yüzdesi
@@ -59,7 +51,13 @@ kullandığınızı bildiğim için en pratik yol bu:
 
 Colab oturumları geçici olduğu için GPU backend URL'si sık değişir.
 Adres, Ayarlar ekranından DataStore'a kaydedilir; URL değiştiğinde
-uygulamayı yeniden derlemenize gerek kalmaz.
+uygulamayı yeniden derlemenize gerek kalmaz. Uygulama, yanlışlıkla
+`/health` ile birlikte yapıştırılan adresi de backend kök adresine çevirir.
+
+Colab notebook'u adresi ekrana yazmadan önce hem yerel hem de herkese açık
+`/health` uçlarını doğrular. Çalıştırma hücresini açık bırakın; hücre
+durdurulursa ngrok tüneli de kapanır. Tünel kopup yeniden kurulursa notebook
+**YENİ SUNUCU ADRESİ** yazdırır ve bu adresin Ayarlar'a yeniden girilmesi gerekir.
 
 ## v2'de test edilmiş / edilmemiş olanlar (lütfen okuyun)
 
@@ -70,11 +68,9 @@ uygulamayı yeniden derlemenize gerek kalmaz.
   **Gerçek Wan modeliyle, gerçek bir GPU'da henüz doğrulanmadı** — bir
   sonraki adım bu olmalı.
 - **Text-to-Video modu tamamen yeni ve hiç çalıştırılmadı.**
-- **Android tarafı** yine bu ortamda derlenemedi (Android SDK/Google Maven
-  erişimim yok); GitHub Actions üzerinden derleyip test etmeniz gerekiyor —
-  bu güncelleme önceki sürümden çok daha fazla yeni Kotlin dosyası içeriyor,
-  bu yüzden ilk derlemede küçük hatalar çıkma ihtimali önceki güncellemelerden
-  daha yüksek. Hata çıkarsa log'u paylaşın, birlikte düzeltelim.
+- **Android tarafı** GitHub Actions ile otomatik test edilip Debug APK olarak
+  derlenir. Gerçek telefonda kamera/galeri seçimi ve uzun üretim sırasında
+  mobil ağ geçişleri ayrıca denenmelidir.
 - `ALLOWED_COMBINATIONS` GPU/kalite/süre tablosu gerçek ölçüm değil, temkinli
   bir tahmindir; gerçek donanımda test ettikten sonra ayarlamanız önerilir.
 

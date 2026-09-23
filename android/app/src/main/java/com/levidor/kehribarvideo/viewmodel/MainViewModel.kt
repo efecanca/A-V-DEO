@@ -283,15 +283,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(phase = GenerationPhase.PROCESSING)
         }
 
+        var consecutiveConnectionFailures = 0
         while (true) {
-            delay(2500)
+            delay(if (consecutiveConnectionFailures == 0) 2500 else 5000)
             val status = try {
                 service.getStatus(jobId)
             } catch (_: Exception) {
-                updateHistoryStatus(jobId, "failed", 0, errorMessage = "Durum sorgulanırken bağlantı hatası oluştu.")
-                if (isPrimary) fail("Durum sorgulanırken bağlantı hatası oluştu.")
-                return
+                consecutiveConnectionFailures += 1
+                if (consecutiveConnectionFailures >= 6) {
+                    // Sunucudaki iş hâlâ devam ediyor olabilir. Geçici bir mobil
+                    // ağ/ngrok kesintisini kalıcı üretim hatası diye geçmişe yazma.
+                    if (isPrimary) {
+                        fail(
+                            "Sunucuyla bağlantı kesildi. İş sunucuda devam ediyor olabilir; " +
+                                "Ayarlar'dan bağlantıyı test edip Sonuçlar ekranından yenileyin."
+                        )
+                    }
+                    return
+                }
+                if (isPrimary) {
+                    _uiState.value = _uiState.value.copy(
+                        infoMessage = "Bağlantı geçici olarak kesildi; yeniden deneniyor " +
+                            "($consecutiveConnectionFailures/6)…"
+                    )
+                }
+                continue
             }
+
+            if (consecutiveConnectionFailures > 0 && isPrimary) {
+                _uiState.value = _uiState.value.copy(infoMessage = null)
+            }
+            consecutiveConnectionFailures = 0
 
             when (status.status) {
                 "queued", "processing" -> {

@@ -21,13 +21,15 @@ class SettingsRepository(private val context: Context) {
     }
 
     val serverUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[SERVER_URL_KEY] ?: DEFAULT_URL
+        val stored = prefs[SERVER_URL_KEY] ?: DEFAULT_URL
+        runCatching { ServerUrl.normalize(stored) }.getOrDefault(DEFAULT_URL)
     }
 
-    suspend fun setServerUrl(url: String) {
-        val normalized = if (url.endsWith("/")) url else "$url/"
+    suspend fun setServerUrl(url: String): String {
+        val normalized = ServerUrl.normalize(url)
         context.dataStore.edit { prefs ->
             prefs[SERVER_URL_KEY] = normalized
         }
+        return normalized
     }
 }

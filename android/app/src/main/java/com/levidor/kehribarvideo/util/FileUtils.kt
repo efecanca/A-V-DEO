@@ -25,7 +25,10 @@ object FileUtils {
     suspend fun downloadVideoToCache(context: Context, videoUrl: String, jobId: String): File =
         withContext(Dispatchers.IO) {
             val client = OkHttpClient()
-            val request = Request.Builder().url(videoUrl).build()
+            val request = Request.Builder()
+                .url(videoUrl)
+                .header("ngrok-skip-browser-warning", "true")
+                .build()
             val dir = File(context.cacheDir, "videos").apply { mkdirs() }
             val outFile = File(dir, "kehribar_$jobId.mp4")
             client.newCall(request).execute().use { response ->

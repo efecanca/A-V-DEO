@@ -18,7 +18,8 @@ object ApiClient {
     @Volatile
     private var currentBaseUrl: String? = null
 
-    fun getService(baseUrl: String): ApiService {
+    fun getService(rawBaseUrl: String): ApiService {
+        val baseUrl = ServerUrl.normalize(rawBaseUrl)
         if (retrofit == null || currentBaseUrl != baseUrl) {
             synchronized(this) {
                 if (retrofit == null || currentBaseUrl != baseUrl) {
@@ -29,6 +30,15 @@ object ApiClient {
                         .connectTimeout(30, TimeUnit.SECONDS)
                         .readTimeout(120, TimeUnit.SECONDS)
                         .writeTimeout(120, TimeUnit.SECONDS)
+                        .addInterceptor { chain ->
+                            val request = chain.request().newBuilder()
+                                // Ngrok ücretsiz tünelinin HTML uyarı sayfası yerine
+                                // FastAPI cevabını doğrudan iletmesini sağlar.
+                                .header("ngrok-skip-browser-warning", "true")
+                                .header("Accept", "application/json")
+                                .build()
+                            chain.proceed(request)
+                        }
                         .addInterceptor(logging)
                         .build()
 
