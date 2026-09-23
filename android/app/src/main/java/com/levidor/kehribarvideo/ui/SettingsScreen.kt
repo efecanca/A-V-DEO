@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.levidor.kehribarvideo.R
+import com.levidor.kehribarvideo.data.ApiClient
 import com.levidor.kehribarvideo.data.SettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -39,6 +40,8 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     var url by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
+    var connectionState by remember { mutableStateOf("Henüz test edilmedi") }
+    var testing by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         url = repository.serverUrlFlow.first()
@@ -90,6 +93,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             if (saved) {
                 Text("Kaydedildi ✓")
             }
+            Button(enabled = !testing, onClick = { scope.launch { testing = true; connectionState = "Bağlantı test ediliyor…"; try { repository.setServerUrl(url.trim()); val normalized = if (url.trim().endsWith("/")) url.trim() else url.trim() + "/"; val response = ApiClient.getService(normalized).health(); connectionState = if (response.isSuccessful) "Bağlı ✓" else "Bağlantı yok (HTTP " + response.code() + ")" } catch (e: Exception) { connectionState = "Bağlantı yok" } finally { testing = false } } }) { Text(if (testing) "Test ediliyor…" else "Bağlantıyı Test Et / Yeniden Bağlan") }
+            Text("Sunucu durumu: " + connectionState)
         }
     }
 }
