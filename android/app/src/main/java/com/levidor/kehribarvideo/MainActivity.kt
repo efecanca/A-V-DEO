@@ -12,7 +12,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.levidor.kehribarvideo.ui.AdModeScreen
 import com.levidor.kehribarvideo.ui.HomeScreen
+import com.levidor.kehribarvideo.ui.ResultsScreen
 import com.levidor.kehribarvideo.ui.SettingsScreen
 import com.levidor.kehribarvideo.ui.theme.KehribarVideoTheme
 import com.levidor.kehribarvideo.viewmodel.MainViewModel
@@ -40,11 +42,19 @@ private fun KehribarNavHost(viewModel: MainViewModel) {
         composable("home") {
             HomeScreen(
                 viewModel = viewModel,
-                onOpenSettings = { navController.navigate("settings") }
+                onOpenSettings = { navController.navigate("settings") },
+                onOpenAdMode = { navController.navigate("ad_mode") },
+                onOpenResults = { navController.navigate("results") }
             )
         }
         composable("settings") {
             SettingsScreen(onBack = { navController.popBackStack() })
+        }
+        composable("ad_mode") {
+            AdModeScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+        composable("results") {
+            ResultsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
     }
 }

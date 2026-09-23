@@ -1,8 +1,11 @@
-# Kehribar Video
+# Kehribar Video (v2)
 
-Kullanıcının galeriden seçtiği bir eşarp/model fotoğrafını, uzak bir GPU
-backend'i (Wan Image-to-Video modeli) üzerinden kısa bir moda videosuna
-dönüştüren Android uygulaması + backend.
+Herhangi bir ürün fotoğrafını (eşarp, çanta, tekstil, ileride başka moda
+ürünleri) uzak bir GPU backend'i (Wan ailesi, sağlayıcı soyutlaması
+üzerinden) ile kısa bir tanıtım videosuna dönüştüren Android uygulaması +
+backend. v2 ile artık: Fotoğraftan/Metinden Video modu, ayarlanabilir
+süre/format/kalite/hareket/kamera, hazır stil presetleri, çoklu ürün +
+15 saniyelik reklam modu, ve kalıcı bir "Sonuçlar" geçmişi ekleniyor.
 
 ```
 KehribarVideo/
@@ -40,10 +43,17 @@ kullandığınızı bildiğim için en pratik yol bu:
 2. **APK'yı kurun** (yukarıdaki GitHub Actions ya da Android Studio yoluyla).
 3. Uygulamayı açın, sağ üstteki **Ayarlar (⚙)** ikonuna dokunup backend
    URL'sini yapıştırıp kaydedin.
-4. Ana ekranda fotoğraf seçin, prompt'u isterseniz düzenleyin,
-   **Video Oluştur**'a basın. İlerleme yüzdesi görünür; bitince video
-   uygulama içinde oynar, **Kaydet** ile galeriye, **Paylaş** ile
-   istediğiniz uygulamaya gönderebilirsiniz.
+4. Ana ekranda ürün fotoğrafı seçin (veya "Metinden Video" moduna geçip
+   yalnızca prompt yazın), süre/format/kalite/hareket/kamera/stil
+   seçeneklerini ayarlayın, **Video Oluştur**'a basın. İlerleme yüzdesi
+   görünür; bitince video uygulama içinde oynar, **Kaydet** ile galeriye,
+   **Paylaş** ile istediğiniz uygulamaya gönderebilirsiniz.
+5. Sağ üstteki 📣 ikonu **Reklam Videosu** modunu açar: birden fazla ürün
+   fotoğrafı seçip ya TEK bir çok-sahneli reklam videosunda ya da her ürün
+   için AYRI bir videoda (toplu mod) birleştirebilirsiniz.
+6. Sağ üstteki 🕘 ikonu **Sonuçlar** ekranını açar: cihazda kalıcı olarak
+   saklanan geçmiş üretimlerinizi (durum, süre, format) gösterir; backend
+   yeniden başlasa bile bu geçmiş kaybolmaz.
 
 ## Neden sunucu adresi APK içine gömülü değil?
 
@@ -51,7 +61,24 @@ Colab oturumları geçici olduğu için GPU backend URL'si sık değişir.
 Adres, Ayarlar ekranından DataStore'a kaydedilir; URL değiştiğinde
 uygulamayı yeniden derlemenize gerek kalmaz.
 
-## Sınırlamalar (v1 — kararlılık önceliği)
+## v2'de test edilmiş / edilmemiş olanlar (lütfen okuyun)
+
+- **Backend mantığı** (capabilities, çoklu sahne + FFmpeg birleştirme, reklam
+  modu, toplu mod, eski istemciyle geri uyumluluk, GPU'ya göre otomatik
+  kombinasyon reddi): gerçek GPU olmadan `torch`/`diffusers` sahte modüllerle
+  uçtan uca test edildi (tüm HTTP akışları ve durum geçişleri doğru çalıştı).
+  **Gerçek Wan modeliyle, gerçek bir GPU'da henüz doğrulanmadı** — bir
+  sonraki adım bu olmalı.
+- **Text-to-Video modu tamamen yeni ve hiç çalıştırılmadı.**
+- **Android tarafı** yine bu ortamda derlenemedi (Android SDK/Google Maven
+  erişimim yok); GitHub Actions üzerinden derleyip test etmeniz gerekiyor —
+  bu güncelleme önceki sürümden çok daha fazla yeni Kotlin dosyası içeriyor,
+  bu yüzden ilk derlemede küçük hatalar çıkma ihtimali önceki güncellemelerden
+  daha yüksek. Hata çıkarsa log'u paylaşın, birlikte düzeltelim.
+- `ALLOWED_COMBINATIONS` GPU/kalite/süre tablosu gerçek ölçüm değil, temkinli
+  bir tahmindir; gerçek donanımda test ettikten sonra ayarlamanız önerilir.
+
+## Sınırlamalar (kararlılık önceliği)
 
 - Video kısa (~2 sn / 33 kare) ve 480p'dir; amaç kaliteden önce sağlam/öngörülebilir
   bir uçtan uca akış kurmaktır.

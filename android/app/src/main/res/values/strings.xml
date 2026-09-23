@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Kehribar Video</string>
     <string name="pick_photo">Fotoğraf Seç</string>
-    <string name="pick_photo_hint">Eşarp / model fotoğrafınızı seçmek için dokunun</string>
+    <string name="pick_photo_hint">Ürün fotoğrafınızı seçmek için dokunun</string>
     <string name="prompt_label">Video açıklaması (prompt)</string>
     <string name="generate_button">Video Oluştur</string>
     <string name="settings_title">Ayarlar</string>
