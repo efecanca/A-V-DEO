@@ -19,37 +19,44 @@ class CogVideoXProvider(VideoProvider):
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA GPU bulunamadi.")
 
-        from diffusers import CogVideoXImageToVideoPipeline
+        from diffusers import (
+            AutoencoderKLCogVideoX,
+            CogVideoXImageToVideoPipeline,
+            CogVideoXTransformer3DModel,
+        )
         from transformers import T5EncoderModel
+        from torchao.quantization import quantize_, int8_weight_only
 
-        # T4'te en buyuk VRAM kazanci: metin encoderini 8-bit yukle.
-        # Video transformer CPU'da tutulur ve sequential offload ile parca parca GPU'ya tasinir.
-        try:
-            from transformers import BitsAndBytesConfig
-            qconfig = BitsAndBytesConfig(load_in_8bit=True)
-            text_encoder = T5EncoderModel.from_pretrained(
-                MODEL_ID,
-                subfolder="text_encoder",
-                quantization_config=qconfig,
-                torch_dtype=torch.float16,
-            )
-            pipe = CogVideoXImageToVideoPipeline.from_pretrained(
-                MODEL_ID,
-                text_encoder=text_encoder,
-                torch_dtype=torch.float16,
-            )
-        except Exception:
-            # bitsandbytes kullanilamazsa yine T4 dostu CPU offload yoluna dus.
-            pipe = CogVideoXImageToVideoPipeline.from_pretrained(
-                MODEL_ID,
-                torch_dtype=torch.float16,
-            )
+        # Resmi CogVideoX T4 yoluna uygun olarak sadece text encoder degil,
+        # transformer ve VAE de INT8 weight-only quantize edilir.
+        dtype = torch.bfloat16
+        q = int8_weight_only()
 
+        text_encoder = T5EncoderModel.from_pretrained(
+            MODEL_ID, subfolder="text_encoder", torch_dtype=dtype
+        )
+        quantize_(text_encoder, q)
+
+        transformer = CogVideoXTransformer3DModel.from_pretrained(
+            MODEL_ID, subfolder="transformer", torch_dtype=dtype
+        )
+        quantize_(transformer, q)
+
+        vae = AutoencoderKLCogVideoX.from_pretrained(
+            MODEL_ID, subfolder="vae", torch_dtype=dtype
+        )
+        quantize_(vae, q)
+
+        pipe = CogVideoXImageToVideoPipeline.from_pretrained(
+            MODEL_ID,
+            text_encoder=text_encoder,
+            transformer=transformer,
+            vae=vae,
+            torch_dtype=dtype,
+        )
         pipe.enable_sequential_cpu_offload()
         pipe.vae.enable_slicing()
         pipe.vae.enable_tiling()
-        if hasattr(pipe, "transformer") and hasattr(pipe.transformer, "enable_forward_chunking"):
-            pipe.transformer.enable_forward_chunking(chunk_size=1, dim=1)
 
         gc.collect()
         torch.cuda.empty_cache()
@@ -57,14 +64,8 @@ class CogVideoXProvider(VideoProvider):
         return pipe
 
     def generate_clip(
-        self,
-        prompt: str,
-        negative_prompt: str,
-        output_path: str,
-        width: int,
-        height: int,
-        num_frames: int,
-        num_inference_steps: int,
+        self, prompt: str, negative_prompt: str, output_path: str,
+        width: int, height: int, num_frames: int, num_inference_steps: int,
         image_path: Optional[str] = None,
         progress_callback: Optional[Callable[[int], None]] = None,
         fps: int = 8,
@@ -104,9 +105,7 @@ class CogVideoXProvider(VideoProvider):
         except torch.cuda.OutOfMemoryError as exc:
             gc.collect()
             torch.cuda.empty_cache()
-            raise RuntimeError(
-                "CogVideoX T4 bellegi yine yetersiz. Colab oturumunu yeniden baslatip tekrar deneyin."
-            ) from exc
+            raise RuntimeError("CogVideoX INT8 T4 bellegi yetersiz kaldi.") from exc
 
         export_to_video(frames, output_path, fps=8)
         del frames
