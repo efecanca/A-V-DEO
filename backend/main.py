@@ -256,7 +256,7 @@ async def _run_job(
     output_path: str,
 ):
     job_manager.update_job(job_id, status="processing", progress=0, scenes_completed=0)
-    provider = get_provider("wan")
+    provider = get_provider()
 
     scene_paths: List[str] = []
     try:
