@@ -8,12 +8,14 @@ GENERATE isteğine opsiyonel bir alan olarak eklenebilir).
 """
 
 from providers.wan_provider import WanProvider
+from providers.cogvideox_provider import CogVideoXProvider
 
 PROVIDERS = {
     "wan": WanProvider(),
+    "cogvideox": CogVideoXProvider(),
 }
 
-DEFAULT_PROVIDER = "wan"
+DEFAULT_PROVIDER = "cogvideox"
 
 
 def get_provider(name: str = DEFAULT_PROVIDER):
