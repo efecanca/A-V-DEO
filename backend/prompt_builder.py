@@ -24,7 +24,20 @@ DEFAULT_BASE_PROMPT = (
 )
 
 DEFAULT_BASE_NEGATIVE = (
-    "flickering, duplicate person, extra limbs, text, watermark, distorted textile"
+    "flickering, duplicate person, extra limbs, text, watermark, distorted textile, "
+    "abstract texture, psychedelic colors, melting face, morphing face, disappearing subject, "
+    "camera shake, fast motion, scarf deformation, pattern drift, logo mutation"
+)
+
+LUXURY_SCARF_CAMPAIGN_PROMPT = (
+    "Create a premium modest-fashion scarf commercial from the supplied reference photograph. "
+    "Keep the same adult model, scarf placement, styling and scene identity from the first frame "
+    "through the final frame. The model remains composed and elegant with only micro movements: "
+    "a subtle blink, tiny natural breathing, and a very small graceful head adjustment. "
+    "The scarf is the hero product and must stay sharply recognizable. Preserve every original "
+    "color, motif, border, logo, lettering, weave and fold; never invent or transform the textile. "
+    "Use refined soft editorial lighting, realistic skin and fabric, shallow depth of field and "
+    "a restrained luxury campaign aesthetic. Motion must remain temporally stable and photorealistic."
 )
 
 
@@ -39,7 +52,14 @@ def build_prompt(
     """
     (final_prompt, final_negative_prompt) döner.
     """
-    parts = [ (user_prompt or DEFAULT_BASE_PROMPT).strip() ]
+    if style_preset == "luxury_scarf_campaign":
+        base_prompt = LUXURY_SCARF_CAMPAIGN_PROMPT
+        # Kullanıcının ek açıklaması ana kampanya talimatını ezmesin; sonuna eklenir.
+        if user_prompt and user_prompt.strip():
+            base_prompt += " Additional direction: " + user_prompt.strip()
+        parts = [base_prompt]
+    else:
+        parts = [(user_prompt or DEFAULT_BASE_PROMPT).strip()]
 
     if motion and motion in MOTION_LEVELS:
         parts.append(MOTION_LEVELS[motion])
