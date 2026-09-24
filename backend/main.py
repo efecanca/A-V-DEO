@@ -80,6 +80,7 @@ app.add_middleware(
 )
 
 app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
+app.mount("/references", StaticFiles(directory=str(OUTPUT_DIR)), name="references")
 
 # asyncio yalnızca zayıf task referansları tutar. Uzun model indirme/inference
 # işleri çöp toplayıcı tarafından erken bırakılmasın diye tamamlanana dek sakla.
@@ -110,6 +111,53 @@ def _parse_bool(value: Optional[str], default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+@app.post("/prepare-reference")
+async def prepare_reference(
+    image: UploadFile = File(...),
+    prompt: Optional[str] = Form(default=None),
+):
+    """Düz ürün/eşarp fotoğrafından videodan bağımsız mankenli önizleme üret."""
+    if image.content_type is None or not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Yalnızca görsel dosyaları kabul edilir.")
+
+    import uuid
+    reference_id = uuid.uuid4().hex
+    ext = os.path.splitext(image.filename or "product.jpg")[1] or ".jpg"
+    source_path = UPLOAD_DIR / f"reference_{reference_id}{ext}"
+    output_path = OUTPUT_DIR / f"reference_{reference_id}.jpg"
+    with open(source_path, "wb") as out:
+        shutil.copyfileobj(image.file, out)
+
+    plan = build_fashion_scene_plan(prompt)
+
+    def cb(stage, progress, detail):
+        logger.info("[REFERENCE %s] aşama=%s ilerleme=%s ayrıntı=%s",
+                    reference_id, stage, progress, detail or "-")
+
+    try:
+        await run_in_threadpool(
+            fashion_image_provider.generate_reference,
+            str(source_path),
+            plan.prompt,
+            plan.negative_prompt,
+            str(output_path),
+            cb,
+        )
+    except Exception as exc:
+        logger.exception("[REFERENCE %s] üretim başarısız", reference_id)
+        raise HTTPException(status_code=500, detail=f"Mankenli görsel üretilemedi: {exc}")
+    finally:
+        try:
+            os.remove(source_path)
+        except OSError:
+            pass
+
+    return {
+        "reference_id": reference_id,
+        "reference_url": f"/references/{output_path.name}",
+    }
 
 
 @app.post("/generate")
