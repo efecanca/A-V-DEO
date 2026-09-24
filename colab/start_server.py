@@ -43,7 +43,7 @@ def install_dependencies() -> None:
         "imageio-ffmpeg",
         "pyngrok",
         "huggingface_hub",
-        "torchao",
+        "torchao>=0.15.0",
         "requests",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
@@ -58,7 +58,7 @@ def install_dependencies() -> None:
     if verify.returncode != 0:
         print("torchao ilk kurulumdan sonra import edilemedi; yeniden kuruluyor...", flush=True)
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", "--no-deps", "torchao"],
+            [sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", "--no-deps", "torchao>=0.15.0"],
             check=True,
         )
         verify = subprocess.run(
@@ -86,7 +86,7 @@ def show_runtime_info() -> None:
     print(f"GPU runtime: {gpu_info}", flush=True)
 
     versions = []
-    for package in ("torch", "torchao", "diffusers", "transformers", "accelerate"):
+    for package in ("torch", "torchao>=0.15.0", "diffusers", "transformers", "accelerate"):
         try:
             versions.append(f"{package}={metadata.version(package)}")
         except metadata.PackageNotFoundError:
