@@ -54,6 +54,7 @@ CAMERA_MOVES = {
 
 STYLE_PRESETS = {
     "luxury_fashion": "luxury high-fashion editorial look, elegant styling, premium atmosphere",
+    "luxury_scarf_campaign": "premium modest-fashion scarf campaign, elegant adult female model wearing the supplied scarf, refined editorial lighting, restrained graceful pose, shallow depth of field, textile-first composition, slow premium commercial pacing",
     "studio": "clean professional studio setting, soft studio lighting, neutral background",
     "modern_architecture": "modern minimalist architectural background, clean geometric lines",
     "natural_daylight": "soft natural daylight, outdoor setting, warm ambient light",
