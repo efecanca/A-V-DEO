@@ -87,7 +87,7 @@ object LocalCapabilityDefaults {
     val CAMERAS = listOf("static", "push_in", "pull_out", "pan_left", "pan_right", "orbit")
     val STYLE_PRESETS = listOf(
         "luxury_fashion", "studio", "modern_architecture", "natural_daylight",
-        "urban", "desert_stone", "minimal", "product_closeup"
+        "luxury_scarf_campaign", "urban", "desert_stone", "minimal", "product_closeup"
     )
 }
 
@@ -108,6 +108,7 @@ fun optionLabel(key: String): String = when (key) {
     "pan_right" -> "Soldan Sağa"
     "orbit" -> "Orbit"
     "luxury_fashion" -> "Lüks Moda"
+    "luxury_scarf_campaign" -> "Lüks Eşarp"
     "studio" -> "Stüdyo"
     "modern_architecture" -> "Modern Mimari"
     "natural_daylight" -> "Doğal Gün Işığı"
