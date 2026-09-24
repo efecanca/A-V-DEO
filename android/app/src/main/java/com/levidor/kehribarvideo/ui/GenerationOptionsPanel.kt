@@ -52,7 +52,7 @@ fun GenerationOptionsPanel(
                         options.copy(
                             mode = "image_to_video",
                             aspectRatio = "9:16",
-                            motion = "subtle",
+                            motion = "natural",
                             camera = "push_in",
                             stylePreset = "luxury_scarf_campaign",
                             productProtection = true
@@ -63,7 +63,7 @@ fun GenerationOptionsPanel(
             )
             if (options.stylePreset == "luxury_scarf_campaign") {
                 Text(
-                    "9:16 • Çok Hafif hareket • Yavaş Yaklaş • Ürün Koruma",
+                    "9:16 • Doğal moda hareketleri • Yavaş Yaklaş • Ürün Koruma",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
