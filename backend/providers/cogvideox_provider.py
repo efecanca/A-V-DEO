@@ -251,7 +251,9 @@ class CogVideoXProvider(VideoProvider):
         status_callback: Optional[StatusCallback] = None,
         fps: int = 8,
     ) -> str:
-        del width, height  # CogVideoX-5B-I2V resmi 720x480 çözünürlüğünü kullanır.
+        # CogVideoX-5B-I2V 720x480 çalışma alanı kullanır; hedef en-boy oranını
+        # kaybetmemek için kaynak kareyi ezip 720x480'e germiyoruz. Dikey istek
+        # 480x720 çalışma karesine, yatay istek 720x480'e hazırlanır.
         if image_path is None:
             raise RuntimeError("CogVideoX T4 modu yalnızca Image-to-Video içindir.")
 
@@ -272,7 +274,20 @@ class CogVideoXProvider(VideoProvider):
             logger.info("[CogVideoX] GPU sırası alındı: %s", output_path)
             try:
                 pipe = self._get_pipe(report)
-                image = Image.open(image_path).convert("RGB").resize((720, 480))
+                source = Image.open(image_path).convert("RGB")
+                portrait = height > width
+                work_size = (480, 720) if portrait else (720, 480)
+                target_ratio = work_size[0] / work_size[1]
+                sw, sh = source.size
+                if sw / sh > target_ratio:
+                    crop_w = max(1, int(sh * target_ratio))
+                    left = (sw - crop_w) // 2
+                    source = source.crop((left, 0, left + crop_w, sh))
+                elif sw / sh < target_ratio:
+                    crop_h = max(1, int(sw / target_ratio))
+                    top = (sh - crop_h) // 2
+                    source = source.crop((0, top, sw, top + crop_h))
+                image = source.resize(work_size, Image.Resampling.LANCZOS)
                 steps = max(10, min(int(num_inference_steps), 20))
                 # CogVideoX temporal VAE için geçerli 8N+1 kare sayısına indir.
                 frames_count = max(9, min(int(num_frames), 49))
