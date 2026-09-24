@@ -175,22 +175,21 @@ class CogVideoXProvider(VideoProvider):
         self._notify(
             status_callback,
             "quantizing",
-            detail="Video transformer katman katman INT8 olarak yükleniyor",
+            detail="Video transformer FP16/BF16 olarak yükleniyor",
         )
         logger.info(
-            "[CogVideoX] Transformer INT8 olarak yükleniyor; %s",
+            "[CogVideoX] Transformer FP16/BF16 olarak yükleniyor; %s",
             self._host_memory_summary(),
         )
         transformer = CogVideoXTransformer3DModel.from_pretrained(
             model_path,
             subfolder="transformer",
             torch_dtype=dtype,
-            quantization_config=self._int8_loading_config(DiffusersTorchAoConfig),
             low_cpu_mem_usage=True,
             local_files_only=True,
         )
         logger.info(
-            "[CogVideoX] Transformer INT8 hazır; %s",
+            "[CogVideoX] Transformer hazır; %s",
             self._host_memory_summary(),
         )
 
@@ -331,7 +330,7 @@ class CogVideoXProvider(VideoProvider):
                 )
                 self._clear_memory()
                 raise RuntimeError(
-                    f"CogVideoX INT8 T4 belleği yetersiz kaldı (aşama: "
+                    f"CogVideoX T4 belleği yetersiz kaldı (aşama: "
                     f"{current_stage}; {memory})."
                 ) from exc
             except Exception:
