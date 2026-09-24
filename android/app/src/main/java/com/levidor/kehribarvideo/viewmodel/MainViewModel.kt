@@ -9,6 +9,7 @@ import com.levidor.kehribarvideo.data.CapabilitiesResponse
 import com.levidor.kehribarvideo.data.JobHistoryRepository
 import com.levidor.kehribarvideo.data.JobRecord
 import com.levidor.kehribarvideo.data.ProductItem
+import com.levidor.kehribarvideo.data.ServerConnection
 import com.levidor.kehribarvideo.data.SettingsRepository
 import com.levidor.kehribarvideo.util.FileUtils
 import kotlinx.coroutines.delay
@@ -298,7 +299,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: java.net.SocketTimeoutException) {
                 fail("Sunucudan zamanında yanıt alınamadı. Lütfen tekrar deneyin.")
             } catch (e: retrofit2.HttpException) {
-                fail("Sunucu isteği reddetti (HTTP ${e.code()}). Seçtiğiniz kalite/süre kombinasyonu bu GPU için uygun olmayabilir.")
+                val response = e.response()
+                fail(
+                    ServerConnection.generationFailureMessage(
+                        statusCode = e.code(),
+                        ngrokErrorCode = response?.headers()?.get("Ngrok-Error-Code"),
+                        errorBody = response?.errorBody()?.string()
+                    )
+                )
             } catch (e: Exception) {
                 fail("Beklenmeyen bir hata oluştu: ${e.message ?: "bilinmiyor"}")
             }
@@ -311,7 +319,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * ayrıca bu ekranın kendi inline oynatıcı durumunu da günceller.
      */
     private suspend fun pollAndTrack(baseUrl: String, jobId: String, isPrimary: Boolean) {
-        val service = ApiClient.getService(baseUrl)
+        var activeBaseUrl = baseUrl
+        var service = ApiClient.getService(activeBaseUrl)
         val context = getApplication<android.app.Application>()
 
         if (isPrimary) {
@@ -326,25 +335,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var consecutiveConnectionFailures = 0
         while (true) {
             delay(if (consecutiveConnectionFailures == 0) 2500 else 5000)
+
+            // Watchdog gerçekten yeni bir ngrok adresi üretirse kullanıcının
+            // Ayarlar'a kaydettiği URL'yi açık job takibi de otomatik devralsın.
+            val configuredBaseUrl = settingsRepository.serverUrlFlow.first()
+            if (configuredBaseUrl != activeBaseUrl) {
+                activeBaseUrl = configuredBaseUrl
+                service = ApiClient.getService(activeBaseUrl)
+                consecutiveConnectionFailures = 0
+            }
+
             val status = try {
                 service.getStatus(jobId)
-            } catch (_: Exception) {
-                consecutiveConnectionFailures += 1
-                if (consecutiveConnectionFailures >= 6) {
-                    // Sunucudaki iş hâlâ devam ediyor olabilir. Geçici bir mobil
-                    // ağ/ngrok kesintisini kalıcı üretim hatası diye geçmişe yazma.
-                    if (isPrimary) {
-                        fail(
-                            "Sunucuyla bağlantı kesildi. İş sunucuda devam ediyor olabilir; " +
-                                "Ayarlar'dan bağlantıyı test edip Sonuçlar ekranından yenileyin."
-                        )
-                    }
+            } catch (e: retrofit2.HttpException) {
+                val response = e.response()
+                val errorBody = response?.errorBody()?.string()
+                if (ServerConnection.isMissingJob(e.code(), errorBody)) {
+                    val msg = "Üretim işi sunucuda bulunamadı. Colab backend'i yeniden başlamış ve geçici iş belleği silinmiş olabilir."
+                    updateHistoryStatus(
+                        jobId,
+                        "failed",
+                        "failed",
+                        null,
+                        null,
+                        errorMessage = msg
+                    )
+                    if (isPrimary) fail(msg)
                     return
                 }
+
+                consecutiveConnectionFailures += 1
+                if (isPrimary) {
+                    val reason = ServerConnection.failureMessage(
+                        statusCode = e.code(),
+                        ngrokErrorCode = response?.headers()?.get("Ngrok-Error-Code"),
+                        errorBody = errorBody,
+                        endpoint = "/status/$jobId"
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        infoMessage = if (consecutiveConnectionFailures < 6) {
+                            "$reason Yeniden deneniyor ($consecutiveConnectionFailures/6)…"
+                        } else {
+                            "$reason İş sunucuda devam ediyor olabilir. Yeni ngrok adresini " +
+                                "Ayarlar'a kaydederseniz takip otomatik sürer."
+                        }
+                    )
+                }
+                continue
+            } catch (_: Exception) {
+                consecutiveConnectionFailures += 1
                 if (isPrimary) {
                     _uiState.value = _uiState.value.copy(
-                        infoMessage = "Bağlantı geçici olarak kesildi; yeniden deneniyor " +
-                            "($consecutiveConnectionFailures/6)…"
+                        infoMessage = if (consecutiveConnectionFailures < 6) {
+                            "Bağlantı geçici olarak kesildi; yeniden deneniyor " +
+                                "($consecutiveConnectionFailures/6)…"
+                        } else {
+                            "Sunucuyla bağlantı kurulamıyor; iş sunucuda devam ediyor olabilir. " +
+                                "Ayarlar'da bağlantıyı test edin. Yeni adresi kaydettiğinizde " +
+                                "takip otomatik sürer."
+                        }
                     )
                 }
                 continue
@@ -393,7 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return
                     }
                     try {
-                        val absoluteUrl = if (videoUrl.startsWith("http")) videoUrl else baseUrl.trimEnd('/') + videoUrl
+                        val absoluteUrl = if (videoUrl.startsWith("http")) videoUrl else activeBaseUrl.trimEnd('/') + videoUrl
                         val localFile = FileUtils.downloadVideoToCache(context, absoluteUrl, jobId)
                         updateHistoryStatus(
                             jobId,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -73,16 +74,21 @@ def show_runtime_info() -> None:
     # TorchAO ile PyTorch sürüm uyuşmazlığı varsa dev model indirmesinden önce
     # görünür bir traceback üret. Sunucu yine açılır; generate işi aynı hatayı
     # job'a `failed` olarak da yazar.
+    probe_code = (
+        f"import sys; sys.path.insert(0, {str(BACKEND_DIR)!r}); "
+        "import torch, torchao; "
+        "from diffusers import TorchAoConfig as D; "
+        "from transformers import TorchAoConfig as T; "
+        "from providers.cogvideox_provider import CogVideoXProvider as P; "
+        "P._int8_loading_config(D); P._int8_loading_config(T); "
+        "print('TorchAO yükleme-sırasında INT8 ön kontrolü: OK; CUDA=' + str(torch.cuda.is_available()))"
+    )
     probe = subprocess.run(
         [
             sys.executable,
             "-u",
             "-c",
-            (
-                "import torch, torchao; "
-                "from torchao.quantization import int8_weight_only, quantize_; "
-                "print('TorchAO INT8 ön kontrolü: OK; CUDA=' + str(torch.cuda.is_available()))"
-            ),
+            probe_code,
         ],
         capture_output=True,
         text=True,
@@ -167,19 +173,73 @@ def stream_backend_output(process: subprocess.Popen) -> threading.Thread:
 
 
 def wait_for_local_backend(process: subprocess.Popen, port: int) -> None:
-    import requests
-
     for _ in range(90):
-        if process.poll() is not None:
-            raise RuntimeError(f"Backend erken kapandı (çıkış kodu {process.returncode})")
-        try:
-            response = requests.get(f"http://127.0.0.1:{port}/health", timeout=3)
-            if response.ok and response.json().get("status") == "ok":
-                return
-        except Exception:
-            pass
+        ensure_backend_alive(process, "yerel /health beklenirken")
+        ok, _detail = local_health(port)
+        if ok:
+            return
         time.sleep(2)
     raise RuntimeError("Backend başlatılamadı")
+
+
+def process_memory_summary(process: subprocess.Popen) -> str:
+    """Alt süreç RAM'ini ve sistemde kalan RAM'i ek bağımlılık olmadan oku."""
+    try:
+        rss_kib = 0
+        with open(f"/proc/{process.pid}/status", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    rss_kib = int(line.split()[1])
+                    break
+
+        mem_available_kib = 0
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    mem_available_kib = int(line.split()[1])
+                    break
+        return (
+            f"backend_rss={rss_kib / (1024**2):.2f} GiB, "
+            f"host_available={mem_available_kib / (1024**2):.2f} GiB"
+        )
+    except (OSError, ValueError):
+        return "RAM bilgisi okunamadı"
+
+
+def backend_exit_detail(return_code: int) -> str:
+    if return_code < 0:
+        try:
+            signal_name = signal.Signals(-return_code).name
+        except ValueError:
+            signal_name = f"signal {-return_code}"
+        detail = f"sinyal={signal_name} ({return_code})"
+        if return_code == -signal.SIGKILL:
+            detail += (
+                "; süreç SIGKILL aldı. Colab sistem RAM'i tükendiğinde "
+                "Linux OOM killer aynı belirtiyi üretir ve Python traceback yazamaz"
+            )
+        return detail
+    return f"çıkış kodu={return_code}"
+
+
+def ensure_backend_alive(process: subprocess.Popen, context: str) -> None:
+    return_code = process.poll()
+    if return_code is not None:
+        raise RuntimeError(
+            f"Backend alt süreci {context} kapandı: {backend_exit_detail(return_code)}"
+        )
+
+
+def local_health(port: int) -> Tuple[bool, str]:
+    import requests
+
+    try:
+        response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
+        if response.ok and response.json().get("status") == "ok":
+            return True, "HTTP 200"
+        return False, f"HTTP {response.status_code}"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 def public_health(url: str) -> Tuple[bool, str]:
@@ -202,7 +262,7 @@ def public_health(url: str) -> Tuple[bool, str]:
         return False, f"{type(exc).__name__}: {exc}"
 
 
-def open_verified_tunnel(port: int):
+def open_verified_tunnel(port: int, backend_process: subprocess.Popen):
     from pyngrok import ngrok
 
     last_error = "bilinmiyor"
@@ -210,9 +270,13 @@ def open_verified_tunnel(port: int):
         tunnel = None
         verified = False
         try:
-            tunnel = ngrok.connect(port, "http")
+            ensure_backend_alive(backend_process, "ngrok tüneli açılırken")
+            # Port numarasının pyngrok/ngrok sürümüne göre localhost veya
+            # IPv6'ya çözülmesini engelle; doğruladığımız IPv4 upstream'i kullan.
+            tunnel = ngrok.connect(addr=f"http://127.0.0.1:{port}", proto="http")
             url = tunnel.public_url.rstrip("/")
             for _ in range(20):
+                ensure_backend_alive(backend_process, "ngrok /health doğrulanırken")
                 ok, detail = public_health(url)
                 if ok:
                     verified = True
@@ -222,6 +286,10 @@ def open_verified_tunnel(port: int):
             if verified:
                 return tunnel, url
         except Exception as exc:
+            # Alt süreç öldüyse bunu ngrok hatası gibi üç kez tekrar edip
+            # maskeleme; asıl çıkış/SIGKILL tanısı doğrudan Colab'a ulaşsın.
+            if backend_process.poll() is not None:
+                raise
             last_error = f"{type(exc).__name__}: {exc}"
         finally:
             if tunnel is not None and not verified:
@@ -268,13 +336,29 @@ def main() -> None:
 
     try:
         wait_for_local_backend(backend_process, port)
-        tunnel, current_url = open_verified_tunnel(port)
+        tunnel, current_url = open_verified_tunnel(port, backend_process)
         show_server_url(current_url)
         print("Bu hücreyi çalışır bırakın. Durdurursanız sunucu ve tünel kapanır.", flush=True)
 
         consecutive_failures = 0
         while backend_process.poll() is None:
             time.sleep(30)
+            ensure_backend_alive(backend_process, "sağlık kontrolü sırasında")
+
+            # Önce FastAPI'yi doğrula. Model yükleme/quantization sırasında
+            # yerel servis geçici olarak cevap veremiyorsa ngrok'u kapatmak URL'yi
+            # gereksiz yere değiştirir ve APK'yı eski adreste bırakır.
+            local_ok, local_detail = local_health(port)
+            if not local_ok:
+                consecutive_failures = 0
+                print(
+                    "Backend yerel sağlık kontrolüne henüz cevap vermiyor; "
+                    f"ngrok adresi korunuyor: {local_detail}; "
+                    f"{process_memory_summary(backend_process)}",
+                    flush=True,
+                )
+                continue
+
             ok, detail = public_health(current_url)
             if ok:
                 consecutive_failures = 0
@@ -296,7 +380,8 @@ def main() -> None:
             except Exception:
                 pass
             ngrok.kill()
-            tunnel, current_url = open_verified_tunnel(port)
+            ensure_backend_alive(backend_process, "ngrok yeniden bağlanırken")
+            tunnel, current_url = open_verified_tunnel(port, backend_process)
             show_server_url(current_url, reconnected=True)
             consecutive_failures = 0
 

@@ -3,6 +3,7 @@
 import gc
 import logging
 import os
+import resource
 import threading
 from typing import Optional
 
@@ -55,6 +56,47 @@ class CogVideoXProvider(VideoProvider):
         except Exception as exc:  # Bellek tanısı asıl hatayı gölgelememeli.
             return f"CUDA bellek bilgisi okunamadı: {exc}"
 
+    @staticmethod
+    def _host_memory_summary() -> str:
+        """Colab sistem RAM'ini logla; SIGKILL/OOM öncesindeki son iz görünür kalsın."""
+        try:
+            values = {}
+            with open("/proc/meminfo", encoding="utf-8") as handle:
+                for line in handle:
+                    key, raw = line.split(":", 1)
+                    if key in {"MemTotal", "MemAvailable"}:
+                        values[key] = int(raw.strip().split()[0]) / (1024**2)
+            peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
+            return (
+                f"process_peak_rss={peak_rss:.2f} GiB, "
+                f"host_available={values.get('MemAvailable', 0):.2f} GiB, "
+                f"host_total={values.get('MemTotal', 0):.2f} GiB"
+            )
+        except Exception as exc:  # Bellek tanısı asıl hatayı gölgelememeli.
+            return f"Sistem RAM bilgisi okunamadı: {exc}"
+
+    @staticmethod
+    def _compute_dtype() -> torch.dtype:
+        # T4 (compute capability 7.5) yerel BF16 yürütmez. CogVideoX-5B FP16'yı
+        # destekler; Ampere ve yenisinde önerilen BF16 kullanılmaya devam eder.
+        major, _minor = torch.cuda.get_device_capability(0)
+        return torch.bfloat16 if major >= 8 else torch.float16
+
+    @staticmethod
+    def _int8_loading_config(config_class):
+        """TorchAO'nun eski string ve yeni AOBaseConfig API'lerini destekle."""
+        try:
+            from torchao.quantization import Int8WeightOnlyConfig
+
+            try:
+                return config_class(quant_type=Int8WeightOnlyConfig())
+            except (TypeError, ValueError):
+                # diffusers 0.35 / transformers 4.51 dönemi string API'si.
+                pass
+        except ImportError:
+            pass
+        return config_class("int8_weight_only")
+
     def _get_pipe(self, status_callback: Optional[StatusCallback]):
         if self._pipe is not None:
             logger.info("[CogVideoX] Model pipeline bellekte hazır; yeniden kullanılacak")
@@ -68,10 +110,10 @@ class CogVideoXProvider(VideoProvider):
             AutoencoderKLCogVideoX,
             CogVideoXImageToVideoPipeline,
             CogVideoXTransformer3DModel,
+            TorchAoConfig as DiffusersTorchAoConfig,
         )
         from huggingface_hub import snapshot_download
-        from torchao.quantization import int8_weight_only, quantize_
-        from transformers import T5EncoderModel
+        from transformers import T5EncoderModel, TorchAoConfig as TransformersTorchAoConfig
 
         properties = torch.cuda.get_device_properties(0)
         logger.info(
@@ -97,72 +139,79 @@ class CogVideoXProvider(VideoProvider):
         model_path = snapshot_download(repo_id=MODEL_ID)
         logger.info("[CogVideoX] Model snapshot hazır: %s", model_path)
 
-        # Resmi CogVideoX düşük bellek yoluyla uyumlu olarak text encoder,
-        # transformer ve VAE üzerinde INT8 weight-only quantization uygulanır.
-        dtype = torch.bfloat16
+        # BF16 modeli tamamen RAM'e alıp sonradan quantize_ etmek, BF16 ve INT8
+        # kopyalarını aynı anda tutar. Colab'in sistem RAM'i tam transformer
+        # dönüşümünde bu nedenle tükenebiliyordu. TorchAO'yu
+        # from_pretrained'a vermek katmanlar yüklenirken INT8'e dönüştürür ve
+        # bu tepeyi ortadan kaldırır.
+        dtype = self._compute_dtype()
+        logger.info(
+            "[CogVideoX] Hesaplama dtype=%s; %s",
+            dtype,
+            self._host_memory_summary(),
+        )
 
         self._notify(
             status_callback,
-            "model_loading",
-            detail="Metin kodlayıcı yükleniyor",
+            "quantizing",
+            detail="Metin kodlayıcı katman katman INT8 olarak yükleniyor",
         )
-        logger.info("[CogVideoX] Text encoder yükleniyor")
+        logger.info(
+            "[CogVideoX] Text encoder INT8 olarak yükleniyor; %s",
+            self._host_memory_summary(),
+        )
         text_encoder = T5EncoderModel.from_pretrained(
             model_path,
             subfolder="text_encoder",
             torch_dtype=dtype,
+            quantization_config=self._int8_loading_config(TransformersTorchAoConfig),
+            low_cpu_mem_usage=True,
             local_files_only=True,
         )
-        self._notify(
-            status_callback,
-            "quantizing",
-            detail="Metin kodlayıcı INT8'e dönüştürülüyor",
+        logger.info(
+            "[CogVideoX] Text encoder INT8 hazır; %s",
+            self._host_memory_summary(),
         )
-        logger.info("[CogVideoX] Text encoder INT8 quantization başladı")
-        quantize_(text_encoder, int8_weight_only())
-        logger.info("[CogVideoX] Text encoder INT8 quantization tamamlandı")
 
         self._notify(
             status_callback,
-            "model_loading",
-            detail="Video transformer yükleniyor",
+            "quantizing",
+            detail="Video transformer katman katman INT8 olarak yükleniyor",
         )
-        logger.info("[CogVideoX] Transformer yükleniyor")
+        logger.info(
+            "[CogVideoX] Transformer INT8 olarak yükleniyor; %s",
+            self._host_memory_summary(),
+        )
         transformer = CogVideoXTransformer3DModel.from_pretrained(
             model_path,
             subfolder="transformer",
             torch_dtype=dtype,
+            quantization_config=self._int8_loading_config(DiffusersTorchAoConfig),
+            low_cpu_mem_usage=True,
             local_files_only=True,
         )
-        self._notify(
-            status_callback,
-            "quantizing",
-            detail="Video transformer INT8'e dönüştürülüyor",
+        logger.info(
+            "[CogVideoX] Transformer INT8 hazır; %s",
+            self._host_memory_summary(),
         )
-        logger.info("[CogVideoX] Transformer INT8 quantization başladı")
-        quantize_(transformer, int8_weight_only())
-        logger.info("[CogVideoX] Transformer INT8 quantization tamamlandı")
 
         self._notify(
             status_callback,
             "model_loading",
-            detail="VAE yükleniyor",
+            detail=f"VAE {str(dtype).replace('torch.', '').upper()} olarak yükleniyor",
         )
-        logger.info("[CogVideoX] VAE yükleniyor")
+        logger.info(
+            "[CogVideoX] VAE yükleniyor; %s",
+            self._host_memory_summary(),
+        )
         vae = AutoencoderKLCogVideoX.from_pretrained(
             model_path,
             subfolder="vae",
             torch_dtype=dtype,
+            low_cpu_mem_usage=True,
             local_files_only=True,
         )
-        self._notify(
-            status_callback,
-            "quantizing",
-            detail="VAE INT8'e dönüştürülüyor",
-        )
-        logger.info("[CogVideoX] VAE INT8 quantization başladı")
-        quantize_(vae, int8_weight_only())
-        logger.info("[CogVideoX] VAE INT8 quantization tamamlandı")
+        logger.info("[CogVideoX] VAE hazır; %s", self._host_memory_summary())
 
         self._notify(
             status_callback,
@@ -185,8 +234,9 @@ class CogVideoXProvider(VideoProvider):
         self._clear_memory()
         self._pipe = pipe
         logger.info(
-            "[CogVideoX] Pipeline hazır; sequential CPU offload etkin (%s)",
+            "[CogVideoX] Pipeline hazır; sequential CPU offload etkin (%s; %s)",
             self._cuda_memory_summary(),
+            self._host_memory_summary(),
         )
         return pipe
 
