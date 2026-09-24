@@ -18,6 +18,13 @@ interface ApiService {
     suspend fun getCapabilities(): CapabilitiesResponse
 
     @Multipart
+    @POST("prepare-reference")
+    suspend fun prepareReference(
+        @Part image: MultipartBody.Part,
+        @Part("prompt") prompt: RequestBody
+    ): ReferenceResponse
+
+    @Multipart
     @POST("generate")
     suspend fun generateVideo(
         @Part images: List<MultipartBody.Part>,
