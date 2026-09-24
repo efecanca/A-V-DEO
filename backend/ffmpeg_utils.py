@@ -8,7 +8,7 @@ statik ffmpeg binary'si kullanılır (requirements.txt üzerinden zaten gelir).
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import imageio_ffmpeg
 
@@ -66,3 +66,42 @@ def concat_video_clips(clip_paths: List[str], output_path: str) -> str:
         Path(list_file_path).unlink(missing_ok=True)
 
     return output_path
+
+
+def finalize_delivery_video(
+    input_path: str,
+    output_path: Optional[str] = None,
+    aspect_ratio: str = "9:16",
+    fps: int = 30,
+) -> str:
+    """Üretim klibini telefon/Reels teslim formatına dönüştür.
+
+    AI'nın düşük FPS üretimini tekrar inference yapmadan 30 FPS zaman tabanına
+    çevirir. 9:16 teslimatta görüntü kırpılıp 1080x1920'e ölçeklenir; siyah
+    kenar veya yatay 720x480 çıktı bırakılmaz.
+    """
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    src = Path(input_path)
+    dst = Path(output_path) if output_path else src.with_name(src.stem + "_delivery.mp4")
+    if aspect_ratio == "9:16":
+        vf = (
+            "crop='if(gt(iw/ih,9/16),ih*9/16,iw)':"
+            "'if(gt(iw/ih,9/16),ih,iw*16/9)',"
+            "scale=1080:1920:flags=lanczos,fps=30"
+        )
+    elif aspect_ratio == "1:1":
+        vf = "crop='min(iw,ih)':'min(iw,ih)',scale=1080:1080:flags=lanczos,fps=30"
+    else:
+        vf = "crop='if(gt(iw/ih,16/9),ih*16/9,iw)':'if(gt(iw/ih,16/9),ih,iw*9/16)',scale=1920:1080:flags=lanczos,fps=30"
+
+    cmd = [
+        ffmpeg_exe, "-y", "-i", str(src),
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        "-an", str(dst),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg teslim videosu başarısız: {result.stderr[-1000:]}")
+    return str(dst)
