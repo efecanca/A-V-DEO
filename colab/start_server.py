@@ -47,6 +47,28 @@ def install_dependencies() -> None:
         "requests",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
+    # Colab runtime bazen pip ile yeni kurulan torchao'yu mevcut Python
+    # sürecinde görünür hale getirmiyor. Ayrı süreçte import ederek kurulumu
+    # doğrula; başarısızsa backend'i başlatıp hatayı üretim anına erteleme.
+    verify = subprocess.run(
+        [sys.executable, "-c", "import torchao; print(torchao.__version__)"],
+        capture_output=True,
+        text=True,
+    )
+    if verify.returncode != 0:
+        print("torchao ilk kurulumdan sonra import edilemedi; yeniden kuruluyor...", flush=True)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", "--no-deps", "torchao"],
+            check=True,
+        )
+        verify = subprocess.run(
+            [sys.executable, "-c", "import torchao; print(torchao.__version__)"],
+            capture_output=True,
+            text=True,
+        )
+    if verify.returncode != 0:
+        raise RuntimeError("torchao kurulamadı:\n" + verify.stderr)
+    print("torchao import doğrulandı: " + verify.stdout.strip(), flush=True)
 
 
 def show_runtime_info() -> None:
