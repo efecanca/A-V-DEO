@@ -50,7 +50,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 import capabilities
-from ffmpeg_utils import concat_video_clips
+from ffmpeg_utils import concat_video_clips, finalize_delivery_video
 from fashion_scene import build_fashion_scene_plan
 from providers.fashion_image_provider import fashion_image_provider
 from job_manager import job_manager
@@ -386,6 +386,24 @@ async def _run_job(
         )
         logger.info("[JOB %s] video sahneleri birleştiriliyor", job_id)
         await run_in_threadpool(concat_video_clips, scene_paths, output_path)
+
+        # Son kullanıcıya AI modelinin ham 8 FPS / çalışma çözünürlüğünü değil,
+        # standart dikey Reels teslim videosunu ver.
+        job = job_manager.get_job(job_id) or {}
+        delivery_aspect = job.get("aspect_ratio", "9:16")
+        if delivery_aspect == "9:16":
+            delivery_path = str(Path(output_path).with_name(f"{job_id}_delivery.mp4"))
+            job_manager.update_job(
+                job_id,
+                status="processing",
+                stage="encoding",
+                stage_detail="1080×1920 / 30 FPS teslim videosu hazırlanıyor",
+                progress=None,
+            )
+            await run_in_threadpool(
+                finalize_delivery_video, output_path, delivery_path, delivery_aspect, 30
+            )
+            os.replace(delivery_path, output_path)
 
         video_name = os.path.basename(output_path)
         job_manager.update_job(
