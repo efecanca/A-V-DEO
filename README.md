@@ -76,8 +76,9 @@ durdurulursa ngrok tüneli de kapanır. Tünel kopup yeniden kurulursa notebook
 
 - Video kısa (~2 sn / 33 kare) ve 480p'dir; amaç kaliteden önce sağlam/öngörülebilir
   bir uçtan uca akış kurmaktır.
-- **CogVideoX-5B-I2V**, text encoder + transformer + VAE için INT8 weight-only
-  quantization ve sequential CPU offload kullanır. İlk model indirmesi,
+- **CogVideoX-5B-I2V**, en büyük iki bileşen olan text encoder + transformer
+  için yükleme sırasında INT8 weight-only quantization; VAE için GPU'ya
+  uygun FP16/BF16 ve tüm pipeline için sequential CPU offload kullanır. İlk model indirmesi,
   quantization ve T4 inference uzun sürebilir; OOM/uyumluluk hataları Colab
   hücresinde traceback ve job'ın `failed` ayrıntısı olarak görünür.
 - İş kuyruğu backend'de bellek içi tutulur (basit ve öngörülebilir);
