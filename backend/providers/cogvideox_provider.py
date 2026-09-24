@@ -154,22 +154,21 @@ class CogVideoXProvider(VideoProvider):
         self._notify(
             status_callback,
             "quantizing",
-            detail="Metin kodlayıcı katman katman INT8 olarak yükleniyor",
+            detail="Metin kodlayıcı FP16/BF16 olarak yükleniyor",
         )
         logger.info(
-            "[CogVideoX] Text encoder INT8 olarak yükleniyor; %s",
+            "[CogVideoX] Text encoder FP16/BF16 olarak yükleniyor; %s",
             self._host_memory_summary(),
         )
         text_encoder = T5EncoderModel.from_pretrained(
             model_path,
             subfolder="text_encoder",
             torch_dtype=dtype,
-            quantization_config=self._int8_loading_config(TransformersTorchAoConfig),
             low_cpu_mem_usage=True,
             local_files_only=True,
         )
         logger.info(
-            "[CogVideoX] Text encoder INT8 hazır; %s",
+            "[CogVideoX] Text encoder hazır; %s",
             self._host_memory_summary(),
         )
 
