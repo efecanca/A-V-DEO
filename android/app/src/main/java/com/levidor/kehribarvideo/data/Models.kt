@@ -11,8 +11,7 @@ data class HealthResponse(
  * bu durumda job_id ilk işin id'sine eşittir (basit istemciler için kolaylık).
  */
 data class ReferenceResponse(
-    val reference_id: String,
-    val reference_url: String
+    val job_id: String
 )
 
 data class GenerateResponse(
@@ -31,6 +30,7 @@ data class StatusResponse(
     val stage_detail: String? = null,
     val progress: Int? = null,
     val video_url: String? = null,
+    val reference_url: String? = null,
     val error: String? = null,
     val scenes_completed: Int? = null,
     val scenes_total: Int? = null,
@@ -49,6 +49,9 @@ fun generationStageLabel(stage: String?, progress: Int? = null): String {
         "model_downloading" -> "Yapay zekâ modeli indiriliyor…"
         "model_loading" -> "Yapay zekâ modeli yükleniyor…"
         "quantizing" -> "Model INT8 için optimize ediliyor…"
+        "reference_model_loading" -> "Mankenli görsel modeli hazırlanıyor…"
+        "reference_generating" -> "Mankenli görsel oluşturuluyor…"
+        "reference_completed" -> "Mankenli görsel hazır"
         "generating" -> "Video oluşturuluyor…"
         "encoding" -> "Video kodlanıyor…"
         "completed" -> "Video hazır"
