@@ -125,6 +125,13 @@ def show_runtime_info() -> None:
 def get_ngrok_token() -> str:
     token = os.environ.get("NGROK_AUTHTOKEN", "").strip()
     if not token:
+        # Kaggle Secret: bir kez NGROK_AUTHTOKEN adıyla kaydetmek yeterli.
+        try:
+            from kaggle_secrets import UserSecretsClient
+            token = (UserSecretsClient().get_secret("NGROK_AUTHTOKEN") or "").strip()
+        except Exception:
+            token = ""
+    if not token:
         try:
             from google.colab import userdata
 
