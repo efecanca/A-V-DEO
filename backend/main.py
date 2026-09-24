@@ -113,51 +113,58 @@ def _parse_bool(value: Optional[str], default: bool) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-@app.post("/prepare-reference")
-async def prepare_reference(
-    image: UploadFile = File(...),
-    prompt: Optional[str] = Form(default=None),
-):
-    """Düz ürün/eşarp fotoğrafından videodan bağımsız mankenli önizleme üret."""
-    if image.content_type is None or not image.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Yalnızca görsel dosyaları kabul edilir.")
-
-    import uuid
-    reference_id = uuid.uuid4().hex
-    ext = os.path.splitext(image.filename or "product.jpg")[1] or ".jpg"
-    source_path = UPLOAD_DIR / f"reference_{reference_id}{ext}"
-    output_path = OUTPUT_DIR / f"reference_{reference_id}.jpg"
-    with open(source_path, "wb") as out:
-        shutil.copyfileobj(image.file, out)
-
+async def _run_reference_job(job_id: str, source_path: str, output_path: str, prompt: Optional[str]):
     plan = build_fashion_scene_plan(prompt)
-
-    def cb(stage, progress, detail):
-        logger.info("[REFERENCE %s] aşama=%s ilerleme=%s ayrıntı=%s",
-                    reference_id, stage, progress, detail or "-")
-
     try:
+        job_manager.update_job(job_id, status="processing", stage="reference_model_loading",
+                               stage_detail="Mankenli görsel modeli hazırlanıyor", progress=None)
+        def cb(stage, progress, detail):
+            job_manager.update_job(job_id, status="processing", stage=stage,
+                                   stage_detail=detail, progress=progress)
+            logger.info("[REFERENCE %s] aşama=%s ilerleme=%s ayrıntı=%s",
+                        job_id, stage, progress if progress is not None else "ölçülemiyor", detail or "-")
         await run_in_threadpool(
-            fashion_image_provider.generate_reference,
-            str(source_path),
-            plan.prompt,
-            plan.negative_prompt,
-            str(output_path),
-            cb,
+            fashion_image_provider.generate_reference, source_path, plan.prompt,
+            plan.negative_prompt, output_path, cb
+        )
+        job_manager.update_job(
+            job_id, status="completed", stage="reference_completed",
+            stage_detail="Mankenli görsel hazır", progress=100,
+            reference_url=f"/references/{Path(output_path).name}"
         )
     except Exception as exc:
-        logger.exception("[REFERENCE %s] üretim başarısız", reference_id)
-        raise HTTPException(status_code=500, detail=f"Mankenli görsel üretilemedi: {exc}")
+        logger.exception("[REFERENCE %s] üretim başarısız", job_id)
+        job_manager.update_job(job_id, status="failed", stage="failed",
+                               stage_detail=str(exc), progress=None,
+                               error=f"Mankenli görsel üretilemedi: {exc}")
     finally:
         try:
             os.remove(source_path)
         except OSError:
             pass
 
-    return {
-        "reference_id": reference_id,
-        "reference_url": f"/references/{output_path.name}",
-    }
+
+@app.post("/prepare-reference")
+async def prepare_reference(
+    image: UploadFile = File(...),
+    prompt: Optional[str] = Form(default=None),
+):
+    """İsteği hemen kabul eder; uzun model yükleme/inference arka planda job olarak sürer."""
+    if image.content_type is None or not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Yalnızca görsel dosyaları kabul edilir.")
+    job_id = job_manager.create_job(
+        mode="reference_image", quality="standard", aspect_ratio="9:16",
+        product_count=1, scenes_total=1
+    )
+    ext = os.path.splitext(image.filename or "product.jpg")[1] or ".jpg"
+    source_path = UPLOAD_DIR / f"reference_{job_id}{ext}"
+    output_path = OUTPUT_DIR / f"reference_{job_id}.jpg"
+    with open(source_path, "wb") as out:
+        shutil.copyfileobj(image.file, out)
+    task = asyncio.create_task(_run_reference_job(job_id, str(source_path), str(output_path), prompt))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return {"job_id": job_id}
 
 
 @app.post("/generate")
@@ -500,6 +507,7 @@ def status(job_id: str):
         "stage_detail": job.get("stage_detail"),
         "progress": job.get("progress"),
         "video_url": job.get("video_url"),
+        "reference_url": job.get("reference_url"),
         "error": job.get("error"),
         "scenes_completed": job.get("scenes_completed", 0),
         "scenes_total": job.get("scenes_total", 1),
