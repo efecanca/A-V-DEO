@@ -44,6 +44,32 @@ fun GenerationOptionsPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
+        OptionSection(title = "Hazır Konsept") {
+            FilterChip(
+                selected = options.stylePreset == "luxury_scarf_campaign",
+                onClick = {
+                    onChange(
+                        options.copy(
+                            mode = "image_to_video",
+                            aspectRatio = "9:16",
+                            motion = "subtle",
+                            camera = "push_in",
+                            stylePreset = "luxury_scarf_campaign",
+                            productProtection = true
+                        )
+                    )
+                },
+                label = { Text("Lüks Eşarp") }
+            )
+            if (options.stylePreset == "luxury_scarf_campaign") {
+                Text(
+                    "9:16 • Çok Hafif hareket • Yavaş Yaklaş • Ürün Koruma",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+        }
+
         if (showModeToggle) {
             OptionSection(title = "Mod") {
                 ChipRow(
