@@ -51,6 +51,8 @@ from starlette.concurrency import run_in_threadpool
 
 import capabilities
 from ffmpeg_utils import concat_video_clips
+from fashion_scene import build_fashion_scene_plan
+from providers.fashion_image_provider import fashion_image_provider
 from job_manager import job_manager
 from job_progress import overall_generation_progress
 from prompt_builder import build_prompt
@@ -322,6 +324,38 @@ async def _run_job(
 
             scene_output = str(Path(output_path).with_name(f"{job_id}_scene_{scene_index}.mp4"))
 
+            # Lüks eşarp konseptinde düz ürün fotoğrafını doğrudan video modeline
+            # vermek yerine önce fotogerçekçi, mankenli moda referans karesi üret.
+            video_image_path = image_path
+            if image_path and "premium modest-fashion scarf campaign" in prompt:
+                reference_path = str(
+                    Path(output_path).with_name(f"{job_id}_reference_{scene_index}.jpg")
+                )
+                scene_plan = build_fashion_scene_plan(prompt)
+
+                def reference_cb(stage, progress, detail):
+                    job_manager.update_job(
+                        job_id,
+                        status="processing",
+                        stage=stage,
+                        stage_detail=detail,
+                        progress=None,
+                    )
+                    logger.info(
+                        "[JOB %s] aşama=%s ilerleme=%s ayrıntı=%s",
+                        job_id, stage, progress if progress is not None else "ölçülemiyor", detail or "-"
+                    )
+
+                await run_in_threadpool(
+                    fashion_image_provider.generate_reference,
+                    image_path,
+                    scene_plan.prompt,
+                    scene_plan.negative_prompt,
+                    reference_path,
+                    reference_cb,
+                )
+                video_image_path = reference_path
+
             await run_in_threadpool(
                 provider.generate_clip,
                 prompt,
@@ -331,10 +365,15 @@ async def _run_job(
                 height,
                 frames_per_scene,
                 num_inference_steps,
-                image_path,
+                video_image_path,
                 status_cb,
                 FPS,
             )
+            if video_image_path and video_image_path != image_path:
+                try:
+                    os.remove(video_image_path)
+                except OSError:
+                    pass
             scene_paths.append(scene_output)
             job_manager.update_job(job_id, scenes_completed=scene_index + 1)
 
