@@ -128,7 +128,14 @@ def get_ngrok_token() -> str:
         # Kaggle Secret: bir kez NGROK_AUTHTOKEN adıyla kaydetmek yeterli.
         try:
             from kaggle_secrets import UserSecretsClient
-            token = (UserSecretsClient().get_secret("NGROK_AUTHTOKEN") or "").strip()
+            secrets = UserSecretsClient()
+            for secret_name in ("Ngrix", "NGROK_AUTHTOKEN"):
+                try:
+                    token = (secrets.get_secret(secret_name) or "").strip()
+                except Exception:
+                    token = ""
+                if token:
+                    break
         except Exception:
             token = ""
     if not token:
