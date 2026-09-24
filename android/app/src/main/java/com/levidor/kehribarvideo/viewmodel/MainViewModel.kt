@@ -213,10 +213,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isPreparingReference = true, referenceImageUrl = null, errorMessage = null, infoMessage = "Mankenli görsel hazırlanıyor…")
+            _uiState.value = _uiState.value.copy(
+                isPreparingReference = true, referenceImageUrl = null,
+                stage = "uploading", stageDetail = "Ürün görseli sunucuya gönderiliyor",
+                progress = null, errorMessage = null, infoMessage = null
+            )
             try {
                 val baseUrl = settingsRepository.serverUrlFlow.first()
-                val service = ApiClient.getService(baseUrl)
+                var service = ApiClient.getService(baseUrl)
                 val context = getApplication<android.app.Application>()
                 val tempFile = File(context.cacheDir, "reference_upload_${System.currentTimeMillis()}.jpg")
                 context.contentResolver.openInputStream(product.uri)?.use { input ->
@@ -226,11 +230,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val part = MultipartBody.Part.createFormData("image", tempFile.name, body)
                 val promptBody = state.options.customPrompt.toRequestBody("text/plain".toMediaTypeOrNull())
                 val response = service.prepareReference(part, promptBody)
-                val absolute = if (response.reference_url.startsWith("http")) response.reference_url else baseUrl.trimEnd('/') + response.reference_url
-                _uiState.value = _uiState.value.copy(isPreparingReference = false, referenceImageUrl = absolute, infoMessage = null)
                 tempFile.delete()
+
+                var activeBaseUrl = baseUrl
+                while (true) {
+                    delay(2500)
+                    val configured = settingsRepository.serverUrlFlow.first()
+                    if (configured != activeBaseUrl) {
+                        activeBaseUrl = configured
+                        service = ApiClient.getService(activeBaseUrl)
+                    }
+                    val status = service.getStatus(response.job_id)
+                    _uiState.value = _uiState.value.copy(
+                        stage = status.stage, stageDetail = status.stage_detail,
+                        progress = status.progress
+                    )
+                    when (status.status) {
+                        "completed" -> {
+                            val ref = status.reference_url
+                                ?: throw IllegalStateException("Sunucu referans görsel adresi göndermedi.")
+                            val absolute = if (ref.startsWith("http")) ref else activeBaseUrl.trimEnd('/') + ref
+                            _uiState.value = _uiState.value.copy(
+                                isPreparingReference = false,
+                                referenceImageUrl = absolute,
+                                stage = "reference_completed",
+                                stageDetail = "Mankenli görsel hazır",
+                                progress = 100
+                            )
+                            return@launch
+                        }
+                        "failed" -> throw IllegalStateException(
+                            status.error ?: status.stage_detail ?: "Mankenli görsel üretilemedi."
+                        )
+                    }
+                }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isPreparingReference = false, infoMessage = null, errorMessage = "Mankenli görsel üretilemedi: ${e.message ?: "bilinmiyor"}")
+                _uiState.value = _uiState.value.copy(
+                    isPreparingReference = false, progress = null,
+                    errorMessage = "Mankenli görsel üretilemedi: ${e.message ?: "bilinmiyor"}"
+                )
             }
         }
     }
