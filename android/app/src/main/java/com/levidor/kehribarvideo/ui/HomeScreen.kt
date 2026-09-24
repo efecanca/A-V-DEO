@@ -168,6 +168,35 @@ fun HomeScreen(
 
             val canSubmit = !isBusy && (isTextToVideo || state.products.isNotEmpty())
 
+            if (!isTextToVideo) {
+                Button(
+                    onClick = { viewModel.prepareReferenceImage() },
+                    enabled = !isBusy && !state.isPreparingReference && state.products.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    if (state.isPreparingReference) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("  Mankenli görsel hazırlanıyor…")
+                    } else {
+                        Text("Mankenli Görsel Oluştur")
+                    }
+                }
+
+                state.referenceImageUrl?.let { referenceUrl ->
+                    Text("Mankenli önizleme", style = MaterialTheme.typography.titleMedium)
+                    AsyncImage(
+                        model = referenceUrl,
+                        contentDescription = "Mankenli eşarp önizlemesi",
+                        modifier = Modifier.fillMaxWidth().height(420.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                    Text(
+                        "Eşarp, desen ve bağlama doğruysa aşağıdan videoya geçebilirsin.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
             Button(
                 onClick = { viewModel.generateVideo() },
                 enabled = canSubmit,
