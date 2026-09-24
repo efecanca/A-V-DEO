@@ -30,16 +30,18 @@ DEFAULT_BASE_NEGATIVE = (
 )
 
 LUXURY_SCARF_CAMPAIGN_PROMPT = (
-    "Create a premium modest-fashion scarf commercial from the supplied reference photograph. "
-    "Keep the same adult model, scarf placement, styling and scene identity from the first frame "
-    "through the final frame. The model remains composed and elegant with only micro movements: "
-    "a subtle blink, tiny natural breathing, and a very small graceful head adjustment. "
-    "The scarf is the hero product and must stay sharply recognizable. Preserve every original "
-    "color, motif, border, logo, lettering, weave and fold; never invent or transform the textile. "
-    "Use refined soft editorial lighting, realistic skin and fabric, shallow depth of field and "
-    "a restrained luxury campaign aesthetic. Motion must remain temporally stable and photorealistic."
+    "Create a premium modest-fashion scarf campaign inspired by the pacing and visual language "
+    "of a polished luxury scarf advertisement, without copying any specific person or shot. "
+    "The adult female model moves naturally and visibly: graceful head turns, changing gaze, "
+    "soft shoulder and upper-body movement, elegant pose transitions, and controlled interaction "
+    "with the scarf while remaining realistic and refined. Use a slow cinematic push-in plus "
+    "gentle reframing and occasional textile-detail emphasis so the shot feels alive rather than static. "
+    "Keep the scarf as the hero product throughout. Preserve the supplied scarf's exact original "
+    "colors, motifs, border, logo, lettering, weave and distinctive details across every frame; "
+    "movement may change natural folds and perspective but must never redesign the textile. "
+    "Use premium editorial lighting, realistic skin and fabric, shallow depth of field, stable identity, "
+    "smooth temporal continuity and an elegant commercial rhythm."
 )
-
 
 def build_prompt(
     user_prompt: Optional[str],
