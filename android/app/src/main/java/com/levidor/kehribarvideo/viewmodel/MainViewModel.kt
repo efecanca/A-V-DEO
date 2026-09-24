@@ -51,6 +51,8 @@ data class MainUiState(
     val stageDetail: String? = null,
     val progress: Int? = null,
     val localVideoFile: File? = null,
+    val referenceImageUrl: String? = null,
+    val isPreparingReference: Boolean = false,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
     val isAdScreen: Boolean = false,
@@ -202,6 +204,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null, infoMessage = null)
+    }
+
+    fun prepareReferenceImage() {
+        val state = _uiState.value
+        val product = state.products.firstOrNull() ?: run {
+            _uiState.value = state.copy(errorMessage = "Önce bir eşarp/ürün fotoğrafı seçin.")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isPreparingReference = true, referenceImageUrl = null, errorMessage = null, infoMessage = "Mankenli görsel hazırlanıyor…")
+            try {
+                val baseUrl = settingsRepository.serverUrlFlow.first()
+                val service = ApiClient.getService(baseUrl)
+                val context = getApplication<android.app.Application>()
+                val tempFile = File(context.cacheDir, "reference_upload_${System.currentTimeMillis()}.jpg")
+                context.contentResolver.openInputStream(product.uri)?.use { input ->
+                    FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                } ?: throw java.io.IOException("Fotoğraf okunamadı.")
+                val body = tempFile.asRequestBody("image/*".toMediaTypeOrNull())
+                val part = MultipartBody.Part.createFormData("image", tempFile.name, body)
+                val promptBody = state.options.customPrompt.toRequestBody("text/plain".toMediaTypeOrNull())
+                val response = service.prepareReference(part, promptBody)
+                val absolute = if (response.reference_url.startsWith("http")) response.reference_url else baseUrl.trimEnd('/') + response.reference_url
+                _uiState.value = _uiState.value.copy(isPreparingReference = false, referenceImageUrl = absolute, infoMessage = null)
+                tempFile.delete()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isPreparingReference = false, infoMessage = null, errorMessage = "Mankenli görsel üretilemedi: ${e.message ?: "bilinmiyor"}")
+            }
+        }
     }
 
     fun generateVideo() {
