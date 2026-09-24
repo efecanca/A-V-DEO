@@ -10,6 +10,11 @@ data class HealthResponse(
  * job_ids yalnızca "toplu mod"da (ad_mode kapalı + birden fazla ürün) dolu gelir;
  * bu durumda job_id ilk işin id'sine eşittir (basit istemciler için kolaylık).
  */
+data class ReferenceResponse(
+    val reference_id: String,
+    val reference_url: String
+)
+
 data class GenerateResponse(
     val job_id: String,
     val job_ids: List<String>? = null
