@@ -1,10 +1,19 @@
-# FPRO AI - Backend (AI GPU sunucusu) — v2
+# FPRO AI - Multi-Agent Moda Stüdyosu Backend
 
-FastAPI tabanlı bu backend, herhangi bir ürün fotoğrafını (yalnızca eşarp
-değil) kısa bir videoya dönüştürür. Model, `providers/` altında
-soyutlanmıştır (bkz. "Mimari" bölümü); Colab varsayılanı
-**CogVideoX-5B-I2V + TorchAO INT8**'dir ve CUDA GPU'da çalışır.
-Android cihazın GPU'su hiçbir zaman kullanılmaz.
+FastAPI backend, gerçek üründen mankenli görsel üretimini ve yalnız kullanıcı
+onayından sonra image-to-video dönüşümünü yönetir. Gemini Image + Google Veo
+birincil provider; Qwen + CogVideoX INT8 yerel fallback'tir. Android cihazın
+GPU'su kullanılmaz ve provider secret'ları istemciye gönderilmez.
+
+Gerekli secret'lar:
+
+```bash
+export GEMINI_API_KEY="..."       # yalnız backend ortamında
+export NGROK_AUTHTOKEN="..."      # Colab/Kaggle tüneli için
+```
+
+Colab ve Kaggle başlatıcıları aynı adları ilgili Secrets deposundan otomatik
+okur; değerleri loglamaz.
 
 ## Yerel / kendi GPU sunucunuzda çalıştırma
 
@@ -36,7 +45,7 @@ uygulamasındaki **Ayarlar** ekranına yapıştırmanız yeterlidir.
 backend URL'si değişir. Bu yüzden Android tarafında sunucu adresi APK içine
 gömülü değil, Ayarlar ekranından değiştirilebilir haldedir.
 
-## Mimari (v2)
+## Mimari
 
 ```
 backend/
@@ -50,6 +59,13 @@ backend/
     wan_provider.py          -> Alternatif Wan I2V/T2V provider'ı
     registry.py              -> sağlayıcı kayıt defteri (yeni model eklemek buraya bir satır)
   main.py                    -> FastAPI uçları, sahne bölme/birleştirme orkestrasyonu
+  studio/
+    agents.py                -> Director, Product Guardian, Image, Visual QC, Video ajanları
+    provider_registry.py     -> capability/availability/kota/maliyet/tercih sıralaması + fallback
+    google_provider.py       -> resmî Gemini API Image/Vision ve Veo REST provider'ları
+    local_providers.py       -> Qwen, CogVideoX INT8 ve ölçülebilir yerel analiz fallback'leri
+    orchestrator.py          -> gerçek aşama telemetrisi + sınırlı QC düzeltmesi + onay kapısı
+    store.py                 -> proje, sohbet, görsel/video sonuç kataloğu
 ```
 
 Yeni bir model/sağlayıcı eklemek isterseniz: `providers/` altına
@@ -71,6 +87,25 @@ hazırlama aşamalarında `progress: null` döner.
 | GET | `/jobs` | Son işlerin özet listesi (bellek içi, geçici — bkz. aşağıdaki not) |
 | GET | `/videos/{dosya}` | Üretilen MP4'ü servis eder |
 | GET | `/health` | Basit sağlık kontrolü |
+| POST | `/studio/generate` | Ürün + opsiyonel manken referansından asenkron görsel job'ı |
+| POST | `/studio/revise` | Mevcut proje sonucuna sohbet revizyonu |
+| POST | `/studio/results/{id}/approve` | Görseli video kaynağı olarak açıkça onaylar |
+| POST | `/studio/results/{id}/video` | Yalnız onaylı görselden Veo/CogVideoX job'ı |
+| GET | `/projects` | Proje kartları, sohbet ve sonuçlar |
+| GET | `/gallery` | Tamamlanan görsel/video sonuçları |
+
+Provider/model varsayılanları ortam değişkenleriyle değiştirilebilir:
+
+```bash
+FPRO_GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
+FPRO_GEMINI_VISION_MODEL=gemini-2.5-flash
+FPRO_VEO_MODEL=veo-3.1-generate-preview
+FPRO_MAX_AUTO_CORRECTIONS=1
+```
+
+Model adları tahmin edilmemiştir; Google'ın güncel Gemini Image ve Veo 3.1
+Gemini API örnekleriyle eşleşir. Canlı API çağrıları ücret/kota tüketebileceği
+için test paketi HTTP provider'larını fake adapter'larla doğrular.
 
 `/generate` form alanları (**hepsi opsiyoneldir**; hiçbiri gönderilmezse eski
 istemciyle BİREBİR AYNI davranış korunur — tek sahne, `standard` kalite, `16:9`):

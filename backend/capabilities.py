@@ -10,7 +10,10 @@ APK'yı yeniden derlemeye gerek kalmaz.
 import os
 from typing import Optional
 
-import torch
+try:
+    import torch
+except ImportError:  # Gemini/Veo-only deployments do not need local PyTorch.
+    torch = None
 
 # ---------------------------------------------------------------------------
 # Temel seçenekler
@@ -98,7 +101,7 @@ def detect_gpu_tier() -> str:
     if override in ("low", "mid", "high"):
         return override
 
-    if not torch.cuda.is_available():
+    if torch is None or not torch.cuda.is_available():
         return "unknown"
 
     try:

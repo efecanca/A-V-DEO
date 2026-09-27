@@ -10,12 +10,16 @@ if ROOT.exists():
 else:
     subprocess.run(["git","clone","--depth","1","https://github.com/efecanca/A-V-DEO.git",str(ROOT)],check=True)
 
-# Kaggle Secrets'ta NGROK_AUTHTOKEN varsa otomatik al.
+# Kaggle Secrets'taki backend anahtarlarını APK'ya veya repoya yazmadan yükle.
 try:
     from kaggle_secrets import UserSecretsClient
-    token=UserSecretsClient().get_secret("NGROK_AUTHTOKEN")
+    secrets=UserSecretsClient()
+    token=secrets.get_secret("NGROK_AUTHTOKEN")
     if token:
         os.environ["NGROK_AUTHTOKEN"]=token
+    gemini_key=secrets.get_secret("GEMINI_API_KEY")
+    if gemini_key:
+        os.environ["GEMINI_API_KEY"]=gemini_key
 except Exception:
     pass
 

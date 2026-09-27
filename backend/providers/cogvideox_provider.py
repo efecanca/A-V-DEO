@@ -5,6 +5,7 @@ import logging
 import os
 import resource
 import threading
+from importlib import metadata
 from typing import Optional
 
 import torch
@@ -84,18 +85,27 @@ class CogVideoXProvider(VideoProvider):
 
     @staticmethod
     def _int8_loading_config(config_class):
-        """TorchAO'nun eski string ve yeni AOBaseConfig API'lerini destekle."""
+        """Build the pinned TorchAO weight-only config used during model loading."""
         try:
             from torchao.quantization import Int8WeightOnlyConfig
-
-            try:
-                return config_class(quant_type=Int8WeightOnlyConfig())
-            except (TypeError, ValueError):
-                # diffusers 0.35 / transformers 4.51 dönemi string API'si.
-                pass
-        except ImportError:
-            pass
-        return config_class("int8_weight_only")
+        except ImportError as exc:
+            raise RuntimeError(
+                "TorchAO INT8 yapılandırması yüklenemedi. Colab başlangıç hücresini "
+                "yeniden çalıştırarak sabitlenmiş bağımlılıkları kurun."
+            ) from exc
+        try:
+            return config_class(quant_type=Int8WeightOnlyConfig())
+        except (TypeError, ValueError) as exc:
+            versions = []
+            for package in ("torch", "torchao", "diffusers", "transformers"):
+                try:
+                    versions.append(f"{package}={metadata.version(package)}")
+                except metadata.PackageNotFoundError:
+                    versions.append(f"{package}=YOK")
+            raise RuntimeError(
+                "TorchAO ile model kütüphanelerinin quantization API'leri uyumsuz: "
+                + ", ".join(versions)
+            ) from exc
 
     def _get_pipe(self, status_callback: Optional[StatusCallback]):
         if self._pipe is not None:
@@ -154,16 +164,18 @@ class CogVideoXProvider(VideoProvider):
         self._notify(
             status_callback,
             "quantizing",
-            detail="Metin kodlayıcı FP16/BF16 olarak yükleniyor",
+            detail="Metin kodlayıcı yükleme sırasında INT8'e dönüştürülüyor",
         )
         logger.info(
-            "[CogVideoX] Text encoder FP16/BF16 olarak yükleniyor; %s",
+            "[CogVideoX] Text encoder yükleme-sırasında INT8; %s",
             self._host_memory_summary(),
         )
+        text_encoder_quant = self._int8_loading_config(TransformersTorchAoConfig)
         text_encoder = T5EncoderModel.from_pretrained(
             model_path,
             subfolder="text_encoder",
             torch_dtype=dtype,
+            quantization_config=text_encoder_quant,
             low_cpu_mem_usage=True,
             local_files_only=True,
         )
@@ -175,16 +187,18 @@ class CogVideoXProvider(VideoProvider):
         self._notify(
             status_callback,
             "quantizing",
-            detail="Video transformer FP16/BF16 olarak yükleniyor",
+            detail="Video transformer yükleme sırasında INT8'e dönüştürülüyor",
         )
         logger.info(
-            "[CogVideoX] Transformer FP16/BF16 olarak yükleniyor; %s",
+            "[CogVideoX] Transformer yükleme-sırasında INT8; %s",
             self._host_memory_summary(),
         )
+        transformer_quant = self._int8_loading_config(DiffusersTorchAoConfig)
         transformer = CogVideoXTransformer3DModel.from_pretrained(
             model_path,
             subfolder="transformer",
             torch_dtype=dtype,
+            quantization_config=transformer_quant,
             low_cpu_mem_usage=True,
             local_files_only=True,
         )

@@ -52,19 +52,22 @@ from starlette.concurrency import run_in_threadpool
 import capabilities
 from ffmpeg_utils import concat_video_clips, finalize_delivery_video
 from fashion_scene import build_fashion_scene_plan
-from providers.fashion_image_provider import fashion_image_provider
 from job_manager import job_manager
 from job_progress import overall_generation_progress
 from prompt_builder import build_prompt
-from providers.registry import get_provider
+from studio.bootstrap import build_provider_registry
+from studio.orchestrator import StudioOrchestrator
+from studio.store import ProjectStore
 
 logger = logging.getLogger("uvicorn.error")
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "storage" / "uploads"
 OUTPUT_DIR = BASE_DIR / "storage" / "outputs"
+STUDIO_DIR = BASE_DIR / "storage" / "studio"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+STUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 # CogVideoX-5B-I2V'nin resmi oynatma hızı 8 FPS'tir. Eski WAN_FPS değişkeni
 # geriye uyumluluk için okunmaya devam eder.
@@ -81,6 +84,25 @@ app.add_middleware(
 
 app.mount("/videos", StaticFiles(directory=str(OUTPUT_DIR)), name="videos")
 app.mount("/references", StaticFiles(directory=str(OUTPUT_DIR)), name="references")
+app.mount("/studio-media", StaticFiles(directory=str(STUDIO_DIR)), name="studio-media")
+
+studio_provider_registry = build_provider_registry()
+project_store = ProjectStore(STUDIO_DIR)
+studio_orchestrator = StudioOrchestrator(
+    studio_provider_registry, project_store, job_manager
+)
+
+
+def _legacy_video_provider(name: Optional[str] = None):
+    from providers.registry import get_provider
+
+    return get_provider(name) if name else get_provider()
+
+
+def _legacy_fashion_image_provider():
+    from providers.fashion_image_provider import fashion_image_provider
+
+    return fashion_image_provider
 
 # asyncio yalnızca zayıf task referansları tutar. Uzun model indirme/inference
 # işleri çöp toplayıcı tarafından erken bırakılmasın diye tamamlanana dek sakla.
@@ -95,10 +117,28 @@ def health():
 @app.get("/capabilities")
 def get_capabilities():
     payload = capabilities.get_capabilities_payload(fps=FPS)
-    provider = get_provider()
-    payload["provider"] = provider.name
-    if provider.name == "cogvideox":
-        payload["modes"] = ["image_to_video"]
+    try:
+        provider = _legacy_video_provider()
+        payload["provider"] = provider.name
+        if provider.name == "cogvideox":
+            payload["modes"] = ["image_to_video"]
+    except Exception:
+        payload["provider"] = "remote_only"
+        payload["modes"] = []
+    payload["studio"] = {
+        "providers": studio_provider_registry.public_capabilities(),
+        "image_aspect_ratios": ["9:16", "1:1", "16:9"],
+        "veo_durations_seconds": [4, 6, 8],
+        "stages": [
+            "product_analyzing",
+            "scene_preparing",
+            "product_applying",
+            "image_enhancing",
+            "quality_checking",
+            "completed",
+        ],
+        "requires_image_approval_before_video": True,
+    }
     return payload
 
 
@@ -113,6 +153,204 @@ def _parse_bool(value: Optional[str], default: bool) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _validate_image_upload(upload: UploadFile) -> None:
+    if upload.content_type is None or not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Yalnızca görsel dosyaları kabul edilir.")
+
+
+def _save_project_upload(project_id: str, upload: UploadFile, prefix: str) -> str:
+    _validate_image_upload(upload)
+    extension = Path(upload.filename or "image.jpg").suffix.lower()
+    if extension not in {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}:
+        extension = ".jpg"
+    destination = project_store.project_directory(project_id) / f"{prefix}_{os.urandom(8).hex()}{extension}"
+    with destination.open("wb") as handle:
+        shutil.copyfileobj(upload.file, handle)
+    return str(destination)
+
+
+async def _run_studio_image_job(**kwargs):
+    await run_in_threadpool(studio_orchestrator.generate_image, **kwargs)
+
+
+async def _run_studio_video_job(**kwargs):
+    await run_in_threadpool(studio_orchestrator.generate_video, **kwargs)
+
+
+@app.post("/studio/generate")
+async def studio_generate(
+    product_image: UploadFile = File(...),
+    prompt: str = Form(...),
+    mannequin_reference: Optional[UploadFile] = File(default=None, alias="model_image"),
+    project_name: Optional[str] = Form(default=None),
+    aspect_ratio: str = Form(default="9:16"),
+    preferred_provider: Optional[str] = Form(default=None),
+    auto_correct: Optional[str] = Form(default="true"),
+):
+    """Create an image job. Video is deliberately a separate, approval-gated request."""
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="Üretim açıklaması boş olamaz.")
+    if aspect_ratio not in {"9:16", "1:1", "16:9"}:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen görsel oranı.")
+    _validate_image_upload(product_image)
+    if mannequin_reference is not None:
+        _validate_image_upload(mannequin_reference)
+
+    project_id = project_store.create_project(prompt, project_name)
+    product_path = _save_project_upload(project_id, product_image, "product")
+    model_path = (
+        _save_project_upload(project_id, mannequin_reference, "model")
+        if mannequin_reference is not None
+        else None
+    )
+    project_store.set_sources(project_id, product_path, model_path)
+    job_id = job_manager.create_job(
+        mode="studio_image",
+        quality="provider_managed",
+        aspect_ratio=aspect_ratio,
+        product_count=1,
+        scenes_total=1,
+        project_id=project_id,
+        media_type="image",
+    )
+    task = asyncio.create_task(
+        _run_studio_image_job(
+            job_id=job_id,
+            project_id=project_id,
+            product_path=product_path,
+            model_path=model_path,
+            user_prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            preferred_provider=preferred_provider,
+            auto_correct=_parse_bool(auto_correct, True),
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return {"job_id": job_id, "project_id": project_id}
+
+
+@app.post("/studio/revise")
+async def studio_revise(
+    project_id: str = Form(...),
+    result_id: str = Form(...),
+    prompt: str = Form(...),
+    aspect_ratio: str = Form(default="9:16"),
+    preferred_provider: Optional[str] = Form(default=None),
+    auto_correct: Optional[str] = Form(default="true"),
+):
+    project = project_store.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail={"code": "project_missing", "message": "Proje bulunamadı."})
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="Revizyon açıklaması boş olamaz.")
+    product_path = project.get("product_path")
+    if not product_path or not Path(product_path).is_file():
+        raise HTTPException(status_code=409, detail="Projenin kaynak ürün görseli bulunamadı.")
+    job_id = job_manager.create_job(
+        mode="studio_image_revision",
+        quality="provider_managed",
+        aspect_ratio=aspect_ratio,
+        product_count=1,
+        scenes_total=1,
+        project_id=project_id,
+        media_type="image",
+    )
+    task = asyncio.create_task(
+        _run_studio_image_job(
+            job_id=job_id,
+            project_id=project_id,
+            product_path=str(product_path),
+            model_path=project.get("model_path"),
+            user_prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            preferred_provider=preferred_provider,
+            revision_result_id=result_id,
+            auto_correct=_parse_bool(auto_correct, True),
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return {"job_id": job_id, "project_id": project_id}
+
+
+@app.post("/studio/results/{result_id}/approve")
+def approve_studio_result(
+    result_id: str,
+    approved: Optional[str] = Form(default="true"),
+):
+    try:
+        result = project_store.approve_result(result_id, _parse_bool(approved, True))
+    except KeyError:
+        raise HTTPException(status_code=404, detail={"code": "result_missing", "message": "Görsel sonucu bulunamadı."})
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"result_id": result_id, "approved": result["approved"]}
+
+
+@app.post("/studio/results/{result_id}/video")
+async def studio_video(
+    result_id: str,
+    prompt: str = Form(default="Lüks moda filmi"),
+    aspect_ratio: str = Form(default="9:16"),
+    duration_seconds: int = Form(default=8),
+    motion: str = Form(default="walking"),
+    camera: str = Form(default="tracking"),
+    preferred_provider: Optional[str] = Form(default=None),
+):
+    found = project_store.get_result(result_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail={"code": "result_missing", "message": "Görsel sonucu bulunamadı."})
+    project_id, result = found
+    if result.get("media_type") != "image" or not result.get("approved"):
+        raise HTTPException(status_code=409, detail="Videoya geçmeden önce mankenli görseli onaylayın.")
+    if aspect_ratio not in {"9:16", "1:1", "16:9"}:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen video oranı.")
+    job_id = job_manager.create_job(
+        mode="studio_video",
+        quality="provider_managed",
+        aspect_ratio=aspect_ratio,
+        product_count=1,
+        scenes_total=1,
+        project_id=project_id,
+        media_type="video",
+        approved_source_result_id=result_id,
+    )
+    task = asyncio.create_task(
+        _run_studio_video_job(
+            job_id=job_id,
+            result_id=result_id,
+            user_prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            duration_seconds=duration_seconds,
+            motion=motion,
+            camera=camera,
+            preferred_provider=preferred_provider,
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return {"job_id": job_id, "project_id": project_id}
+
+
+@app.get("/projects")
+def list_projects():
+    return {"projects": project_store.list_projects()}
+
+
+@app.get("/projects/{project_id}")
+def get_project(project_id: str):
+    project = project_store.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail={"code": "project_missing", "message": "Proje bulunamadı."})
+    return project_store.public_project(project)
+
+
+@app.get("/gallery")
+def studio_gallery():
+    return {"items": project_store.gallery()}
+
+
 async def _run_reference_job(job_id: str, source_path: str, output_path: str, prompt: Optional[str]):
     plan = build_fashion_scene_plan(prompt)
     try:
@@ -124,7 +362,7 @@ async def _run_reference_job(job_id: str, source_path: str, output_path: str, pr
             logger.info("[REFERENCE %s] aşama=%s ilerleme=%s ayrıntı=%s",
                         job_id, stage, progress if progress is not None else "ölçülemiyor", detail or "-")
         await run_in_threadpool(
-            fashion_image_provider.generate_reference, source_path, plan.prompt,
+            _legacy_fashion_image_provider().generate_reference, source_path, plan.prompt,
             plan.negative_prompt, output_path, cb
         )
         job_manager.update_job(
@@ -327,7 +565,7 @@ async def _run_job(
     scene_seconds: float,
     output_path: str,
 ):
-    provider = get_provider()
+    provider = _legacy_video_provider()
     logger.info(
         "[JOB %s] oluşturuldu: provider=%s, sahne=%s, çözünürlük=%sx%s, adım=%s",
         job_id,
@@ -402,7 +640,7 @@ async def _run_job(
                     )
 
                 await run_in_threadpool(
-                    fashion_image_provider.generate_reference,
+                    _legacy_fashion_image_provider().generate_reference,
                     image_path,
                     scene_plan.prompt,
                     scene_plan.negative_prompt,
@@ -500,7 +738,16 @@ async def _run_job(
 def status(job_id: str):
     job = job_manager.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="job_id bulunamadı.")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "job_lost",
+                "message": (
+                    "Bu üretim işi artık sunucuda bulunmuyor. Runtime yeniden "
+                    "başlatılmış veya geçici iş belleği temizlenmiş olabilir."
+                ),
+            },
+        )
     return {
         "status": job["status"],
         "stage": job.get("stage"),
@@ -508,6 +755,7 @@ def status(job_id: str):
         "progress": job.get("progress"),
         "video_url": job.get("video_url"),
         "reference_url": job.get("reference_url"),
+        "image_url": job.get("image_url"),
         "error": job.get("error"),
         "scenes_completed": job.get("scenes_completed", 0),
         "scenes_total": job.get("scenes_total", 1),
@@ -516,5 +764,11 @@ def status(job_id: str):
         "quality": job.get("quality"),
         "aspect_ratio": job.get("aspect_ratio"),
         "product_count": job.get("product_count", 1),
+        "project_id": job.get("project_id"),
+        "result_id": job.get("result_id"),
+        "media_type": job.get("media_type"),
+        "provider": job.get("provider"),
+        "provider_attempts": job.get("provider_attempts"),
+        "qc": job.get("qc"),
         "updated_at": job.get("updated_at"),
     }

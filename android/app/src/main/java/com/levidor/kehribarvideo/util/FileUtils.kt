@@ -17,6 +17,33 @@ import java.io.FileOutputStream
 
 object FileUtils {
 
+    suspend fun downloadMediaToCache(
+        context: Context,
+        mediaUrl: String,
+        id: String,
+        mediaType: String
+    ): File = withContext(Dispatchers.IO) {
+        val extension = if (mediaType == "video") "mp4" else "jpg"
+        val mime = if (mediaType == "video") "video/mp4" else "image/jpeg"
+        val client = OkHttpClient()
+        val request = Request.Builder()
+            .url(mediaUrl)
+            .header("ngrok-skip-browser-warning", "true")
+            .header("Accept", mime)
+            .build()
+        val dir = File(context.cacheDir, "videos").apply { mkdirs() }
+        val outFile = File(dir, "fpro_${id.replace(Regex("[^a-zA-Z0-9_-]"), "_")}.$extension")
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw java.io.IOException("İçerik indirilemedi: HTTP ${response.code}")
+            }
+            response.body?.byteStream()?.use { input ->
+                FileOutputStream(outFile).use { output -> input.copyTo(output) }
+            } ?: throw java.io.IOException("İçerik verisi boş döndü")
+        }
+        outFile
+    }
+
     /**
      * Uzak video_url'i indirip cache klasörüne kaydeder ve yerel Uri döner.
      * ExoPlayer'a yerel dosya vermek, oynatma sırasında ağ dalgalanmalarına
@@ -78,6 +105,32 @@ object FileUtils {
             itemUri
         }
 
+    suspend fun saveImageToGallery(context: Context, sourceFile: File): Uri =
+        withContext(Dispatchers.IO) {
+            val fileName = "FPRO_AI_${System.currentTimeMillis()}.jpg"
+            val resolver = context.contentResolver
+            val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/FPRO AI")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            val itemUri = resolver.insert(collection, values)
+                ?: throw java.io.IOException("Galeri kaydı oluşturulamadı")
+            resolver.openOutputStream(itemUri)?.use { output ->
+                sourceFile.inputStream().use { input -> input.copyTo(output) }
+            } ?: throw java.io.IOException("Görsel yazılamadı")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(itemUri, values, null, null)
+            }
+            itemUri
+        }
+
     /**
      * Videoyu paylaşmak için bir Intent.ACTION_SEND hazırlar (FileProvider üzerinden).
      */
@@ -89,6 +142,19 @@ object FileUtils {
         )
         return Intent(Intent.ACTION_SEND).apply {
             type = "video/mp4"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    fun buildMediaShareIntent(context: Context, file: File, mediaType: String): Intent {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        return Intent(Intent.ACTION_SEND).apply {
+            type = if (mediaType == "video") "video/mp4" else "image/jpeg"
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

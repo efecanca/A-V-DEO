@@ -26,4 +26,13 @@ class GenerationStageLabelTest {
     fun progressIsClampedToApiRange() {
         assertEquals("Video oluşturuluyor… %100", generationStageLabel("generating", 140))
     }
+
+    @Test
+    fun studioStagesUseCustomerFacingTurkishWithoutFakePercent() {
+        assertEquals("Ürün analiz ediliyor…", generationStageLabel("product_analyzing", null))
+        assertEquals("Manken sahnesi hazırlanıyor…", generationStageLabel("scene_preparing", null))
+        assertEquals("Eşarp uygulanıyor…", generationStageLabel("product_applying", null))
+        assertEquals("Görsel iyileştiriliyor…", generationStageLabel("image_enhancing", null))
+        assertEquals("Kalite kontrolü yapılıyor…", generationStageLabel("quality_checking", null))
+    }
 }

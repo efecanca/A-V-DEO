@@ -30,12 +30,12 @@ HEALTH_HEADERS = {
 
 def install_dependencies() -> None:
     packages = [
-        "fastapi",
-        "uvicorn[standard]",
-        "python-multipart",
-        "diffusers>=0.35.1",
-        "transformers>=4.51.0",
-        "accelerate>=0.34.0",
+        "fastapi==0.111.0",
+        "uvicorn[standard]==0.30.1",
+        "python-multipart==0.0.9",
+        "diffusers==0.40.0",
+        "transformers==5.17.0",
+        "accelerate==1.15.0",
         "safetensors>=0.4.5",
         "sentencepiece",
         "ftfy",
@@ -43,10 +43,11 @@ def install_dependencies() -> None:
         "imageio-ffmpeg",
         "pyngrok",
         "huggingface_hub",
-        "torchao>=0.15.0",
+        "torchao==0.18.0",
         "requests",
     ]
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
+    # Kurulum çıktısı özellikle sürüm/çözümleme hataları Colab'da görünür olsun.
+    subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", *packages], check=True)
     # Colab runtime bazen pip ile yeni kurulan torchao'yu mevcut Python
     # sürecinde görünür hale getirmiyor. Ayrı süreçte import ederek kurulumu
     # doğrula; başarısızsa backend'i başlatıp hatayı üretim anına erteleme.
@@ -58,7 +59,7 @@ def install_dependencies() -> None:
     if verify.returncode != 0:
         print("torchao ilk kurulumdan sonra import edilemedi; yeniden kuruluyor...", flush=True)
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", "--no-deps", "torchao>=0.15.0"],
+            [sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", "--no-deps", "torchao==0.18.0"],
             check=True,
         )
         verify = subprocess.run(
@@ -86,7 +87,7 @@ def show_runtime_info() -> None:
     print(f"GPU runtime: {gpu_info}", flush=True)
 
     versions = []
-    for package in ("torch", "torchao>=0.15.0", "diffusers", "transformers", "accelerate"):
+    for package in ("torch", "torchao", "diffusers", "transformers", "accelerate"):
         try:
             versions.append(f"{package}={metadata.version(package)}")
         except metadata.PackageNotFoundError:
@@ -120,6 +121,35 @@ def show_runtime_info() -> None:
     if probe.returncode != 0:
         print("TorchAO INT8 ön kontrolü BAŞARISIZ:", flush=True)
         print(probe.stderr.rstrip(), flush=True)
+        raise RuntimeError(
+            "CogVideoX INT8 bağımlılık ön kontrolü başarısız. Yukarıdaki traceback "
+            "düzeltilmeden model indirme başlatılmadı."
+        )
+
+
+def load_optional_provider_secret(name: str) -> bool:
+    """Load a provider secret into the child environment without printing its value."""
+    if os.environ.get(name, "").strip():
+        return True
+    try:
+        from kaggle_secrets import UserSecretsClient
+
+        value = (UserSecretsClient().get_secret(name) or "").strip()
+        if value:
+            os.environ[name] = value
+            return True
+    except Exception:
+        pass
+    try:
+        from google.colab import userdata
+
+        value = (userdata.get(name) or "").strip()
+        if value:
+            os.environ[name] = value
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def get_ngrok_token() -> str:
@@ -356,6 +386,12 @@ def main() -> None:
 
     install_dependencies()
     show_runtime_info()
+    gemini_configured = load_optional_provider_secret("GEMINI_API_KEY")
+    print(
+        "Gemini/Veo backend secret durumu: "
+        + ("yapılandırıldı" if gemini_configured else "bulunamadı; yerel fallback kullanılacak"),
+        flush=True,
+    )
 
     from pyngrok import ngrok
 

@@ -14,12 +14,12 @@ pydantic==2.7.4
 # Wan Image-to-Video (diffusers, Wan desteğini Mart 2025'te ekledi;
 # diffusers < 0.33 sürümlerinde WanImageToVideoPipeline / AutoencoderKLWan
 # YOKTUR ve "from diffusers import WanImageToVideoPipeline" ImportError verir)
-diffusers>=0.35.1
-transformers>=4.51.0
-accelerate>=0.34.0
+diffusers==0.40.0
+transformers==5.17.0
+accelerate==1.15.0
 safetensors>=0.4.5
 huggingface_hub>=0.24.0
-torchao
+torchao==0.18.0
 sentencepiece==0.2.0
 ftfy==6.2.3
 
@@ -27,3 +27,4 @@ imageio==2.35.1
 imageio-ffmpeg==0.5.1
 pillow==10.4.0
 numpy>=1.26.4
+requests>=2.32.0

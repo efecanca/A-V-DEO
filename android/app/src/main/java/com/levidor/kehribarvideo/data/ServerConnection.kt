@@ -46,7 +46,21 @@ object ServerConnection {
     }
 
     fun isMissingJob(statusCode: Int, errorBody: String?): Boolean =
-        statusCode == 404 && errorBody.orEmpty().contains("job_id bulunamadı", ignoreCase = true)
+        statusCode == 404 && (
+            errorBody.orEmpty().contains("job_id bulunamadı", ignoreCase = true) ||
+                errorBody.orEmpty().contains("job_lost", ignoreCase = true) ||
+                errorBody.orEmpty().contains("artık sunucuda bulunmuyor", ignoreCase = true)
+            )
+
+    fun studioFailureMessage(statusCode: Int, errorBody: String?): String {
+        val detail = backendDetail(errorBody)
+        return when (statusCode) {
+            409 -> detail ?: "Bu işlem için önce mankenli görseli onaylayın."
+            404 -> detail ?: "Proje veya üretim sonucu artık sunucuda bulunmuyor."
+            400 -> detail ?: "Gönderilen ürün veya üretim ayarları geçerli değil."
+            else -> detail ?: "Stüdyo isteği tamamlanamadı (HTTP $statusCode)."
+        }
+    }
 
     private fun backendDetail(errorBody: String?): String? {
         val raw = errorBody?.takeIf { it.isNotBlank() } ?: return null
