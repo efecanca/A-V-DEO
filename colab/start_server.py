@@ -95,8 +95,8 @@ def show_runtime_info() -> None:
     print("Model paketleri: " + ", ".join(versions), flush=True)
 
     # TorchAO ile PyTorch sürüm uyuşmazlığı varsa dev model indirmesinden önce
-    # görünür bir traceback üret. Sunucu yine açılır; generate işi aynı hatayı
-    # job'a `failed` olarak da yazar.
+    # görünür bir traceback üret. Gemini/Veo ve /health çalışmaya devam etsin;
+    # yalnız çalışamayacağı doğrulanan yerel CogVideoX fallback'ini kapat.
     probe_code = (
         f"import sys; sys.path.insert(0, {str(BACKEND_DIR)!r}); "
         "import torch, torchao; "
@@ -121,9 +121,11 @@ def show_runtime_info() -> None:
     if probe.returncode != 0:
         print("TorchAO INT8 ön kontrolü BAŞARISIZ:", flush=True)
         print(probe.stderr.rstrip(), flush=True)
-        raise RuntimeError(
-            "CogVideoX INT8 bağımlılık ön kontrolü başarısız. Yukarıdaki traceback "
-            "düzeltilmeden model indirme başlatılmadı."
+        os.environ["FPRO_ENABLE_COGVIDEO_FALLBACK"] = "false"
+        print(
+            "CogVideoX fallback bu oturum için kapatıldı; model indirme "
+            "başlatılmayacak. FastAPI ve uzak Gemini/Veo provider'ları açılıyor.",
+            flush=True,
         )
 
 

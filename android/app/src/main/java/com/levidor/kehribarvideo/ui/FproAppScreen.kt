@@ -376,7 +376,14 @@ private fun StudioScreen(
                 )
             }
             if (state.isBusy) {
-                item { RealStageCard(state.stage, state.stageDetail, state.progress) }
+                item {
+                    RealStageCard(
+                        operation = state.activeOperation,
+                        stage = state.stage,
+                        detail = state.stageDetail,
+                        progress = state.progress
+                    )
+                }
             }
         }
 
@@ -626,8 +633,15 @@ private fun ResultAction(label: String, icon: ImageVector, onClick: () -> Unit, 
 }
 
 @Composable
-private fun RealStageCard(stage: String?, detail: String?, progress: Int?) {
+private fun RealStageCard(
+    operation: String?,
+    stage: String?,
+    detail: String?,
+    progress: Int?
+) {
     val imageStages = listOf(
+        "uploading" to "Referanslar yükleniyor",
+        "queued" to "AI ajanları sıraya alınıyor",
         "product_analyzing" to "Ürün analiz ediliyor",
         "scene_preparing" to "Manken sahnesi hazırlanıyor",
         "product_applying" to "Eşarp uygulanıyor",
@@ -635,13 +649,30 @@ private fun RealStageCard(stage: String?, detail: String?, progress: Int?) {
         "quality_checking" to "Kalite kontrolü",
         "completed" to "Hazır"
     )
-    val videoStages = listOf(
+    val veoStages = listOf(
         "scene_preparing" to "Onaylı görsel hazırlanıyor",
         "generating" to "Video oluşturuluyor",
         "encoding" to "Video sonlandırılıyor",
         "completed" to "Hazır"
     )
-    val stages = if (stage in setOf("generating", "encoding")) videoStages else imageStages
+    val localVideoStages = listOf(
+        "scene_preparing" to "Onaylı görsel hazırlanıyor",
+        "queued" to "GPU sırasında bekleniyor",
+        "model_downloading" to "Video modeli indiriliyor",
+        "quantizing" to "Model INT8 için optimize ediliyor",
+        "model_loading" to "Video modeli yükleniyor",
+        "generating" to "Video oluşturuluyor",
+        "encoding" to "Video sonlandırılıyor",
+        "completed" to "Hazır"
+    )
+    val localModelStage = stage in setOf(
+        "queued", "model_downloading", "quantizing", "model_loading"
+    )
+    val stages = when {
+        operation != "video" -> imageStages
+        localModelStage -> localVideoStages
+        else -> veoStages
+    }
     val currentIndex = stages.indexOfFirst { it.first == stage }.coerceAtLeast(0)
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

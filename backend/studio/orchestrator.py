@@ -99,7 +99,12 @@ class StudioOrchestrator:
                 "product_analyzing",
                 "Ürünün renk, motif, bordür ve görünür yazıları analiz ediliyor",
             )
-            fingerprint = self.guardian.analyze(product_path, preferred_provider="gemini_image")
+            # Registry priority makes Gemini the default without coupling the
+            # orchestration layer to one vendor. A compatible user preference
+            # is honoured; otherwise the registry selects the best vision provider.
+            fingerprint = self.guardian.analyze(
+                product_path, preferred_provider=preferred_provider
+            )
             self.store.update_project(project_id, fingerprint=fingerprint.to_dict())
 
             self._stage(
@@ -156,7 +161,10 @@ class StudioOrchestrator:
                 "Visual QC gerçek ürün ile oluşturulan görseli karşılaştırıyor",
             )
             qc = self.qc_agent.compare(
-                product_path, final_path, fingerprint, preferred_provider="gemini_image"
+                product_path,
+                final_path,
+                fingerprint,
+                preferred_provider=preferred_provider,
             )
 
             correction_count = 0
@@ -206,7 +214,10 @@ class StudioOrchestrator:
                     "Düzeltilen görsel ürün referansıyla yeniden karşılaştırılıyor",
                 )
                 qc = self.qc_agent.compare(
-                    product_path, final_path, fingerprint, preferred_provider="gemini_image"
+                    product_path,
+                    final_path,
+                    fingerprint,
+                    preferred_provider=preferred_provider,
                 )
                 should_correct = False
 
@@ -362,4 +373,3 @@ class StudioOrchestrator:
                 project_id=project_id,
                 media_type="video",
             )
-

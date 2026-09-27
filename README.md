@@ -26,9 +26,17 @@ Debug APK'yı derler ve indirilebilir bir artifact olarak yayınlar:
 
 1. GitHub'da **Actions → Build Debug APK** sayfasını açın.
 2. En yeni yeşil çalıştırmayı açıp "fpro-ai-debug-apk" adlı artifact'i
-   indirin — debug APK içindedir.
+   indirin ve ZIP'i açın — kurulacak dosya içerideki `app-debug.apk`'dır.
+   Artifact ZIP'inin uzantısını `.apk` yapmak Android'de "paket ayrıştırılamadı"
+   hatasına yol açar.
 3. İsterseniz Android Studio'da `android/` klasörünü açıp **Run** ile de
    derleyebilirsiniz.
+
+GitHub'ın geçici runner'ında üretilen Debug APK'ların imza anahtarı koşular
+arasında değişebilir. Telefonda daha eski bir Actions Debug APK'sı kuruluysa
+yeni dosya onun üzerine kurulamayabilir; bu durumda eski debug uygulamasını bir
+kez kaldırmak gerekir. Kalıcı kullanıcı verisini koruyan mağaza güncellemeleri
+için aynı güvenli release signing key'iyle imzalanmış Release APK/AAB kullanın.
 
 ## Hızlı başlangıç
 
@@ -87,8 +95,8 @@ durdurulursa ngrok tüneli de kapanır. Tünel kopup yeniden kurulursa notebook
 
 ## Sınırlamalar (kararlılık önceliği)
 
-- Video kısa (~2 sn / 33 kare) ve 480p'dir; amaç kaliteden önce sağlam/öngörülebilir
-  bir uçtan uca akış kurmaktır.
+- Yerel CogVideoX fallback kısa (en fazla 49 kare) ve 480p çalışma alanındadır;
+  Veo yolu ise seçilen 4/6/8 saniye ve 720p ayarını kullanır.
 - **CogVideoX-5B-I2V**, en büyük iki bileşen olan text encoder + transformer
   için yükleme sırasında INT8 weight-only quantization; VAE için GPU'ya
   uygun FP16/BF16 ve tüm pipeline için sequential CPU offload kullanır. İlk model indirmesi,

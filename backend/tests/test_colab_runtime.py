@@ -18,6 +18,7 @@ class ColabRuntimeContractTests(unittest.TestCase):
         self.assertNotIn('"pip", "install", "-q"', source)
         self.assertIn("stdout=subprocess.PIPE", source)
         self.assertIn("stderr=subprocess.STDOUT", source)
+        self.assertIn('os.environ["FPRO_ENABLE_COGVIDEO_FALLBACK"] = "false"', source)
 
     def test_cogvideox_applies_int8_during_component_loading(self):
         source = (ROOT / "backend" / "providers" / "cogvideox_provider.py").read_text(
@@ -40,4 +41,3 @@ class ColabRuntimeContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

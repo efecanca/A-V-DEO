@@ -60,6 +60,7 @@ data class StudioUiState(
         )
     ),
     val phase: StudioPhase = StudioPhase.IDLE,
+    val activeOperation: String? = null,
     val stage: String? = null,
     val stageDetail: String? = null,
     val progress: Int? = null,
@@ -186,6 +187,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     messages = chat,
                     promptText = "",
                     phase = StudioPhase.IDLE,
+                    activeOperation = null,
                     stage = null,
                     stageDetail = null,
                     progress = null,
@@ -229,6 +231,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             lastUserPrompt = prompt,
             messages = snapshot.messages + StudioChatMessage(role = "user", text = prompt),
             phase = StudioPhase.UPLOADING,
+            activeOperation = "image",
             stage = "uploading",
             stageDetail = "Referanslar güvenli biçimde sunucuya gönderiliyor",
             progress = null,
@@ -332,6 +335,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         val prompt = _uiState.value.lastUserPrompt.ifBlank { "Lüks moda filmi" }
         _uiState.value = _uiState.value.copy(
             phase = StudioPhase.RUNNING,
+            activeOperation = "video",
             stage = "scene_preparing",
             stageDetail = "Görsel onayı kaydediliyor",
             progress = null,

@@ -55,7 +55,7 @@ backend/
   job_manager.py           -> bellek içi iş (job) durumu, artık sahne/ürün metadatası da tutuyor
   providers/
     base.py                 -> VideoProvider soyut arayüzü
-    cogvideox_provider.py    -> CogVideoX-5B-I2V + üç bileşende INT8 + CPU offload
+    cogvideox_provider.py    -> CogVideoX-5B-I2V + T5/transformer INT8 + VAE FP16/BF16 + CPU offload
     wan_provider.py          -> Alternatif Wan I2V/T2V provider'ı
     registry.py              -> sağlayıcı kayıt defteri (yeni model eklemek buraya bir satır)
   main.py                    -> FastAPI uçları, sahne bölme/birleştirme orkestrasyonu
@@ -187,24 +187,22 @@ export WAN_I2V_MODEL_ID="Wan-AI/Wan2.1-I2V-14B-720P"   # Image-to-Video
 export WAN_T2V_MODEL_ID="Wan-AI/Wan2.1-T2V-14B"        # Text-to-Video (varsayılan: 1.3B)
 ```
 
-## v2'de test edilmiş / edilmemiş olanlar (önemli, lütfen okuyun)
+## Test edilmiş / çalışma zamanında doğrulanacak olanlar
 
-- **Image-to-Video (tek ürün, tek sahne):** önceki sürümden beri var olan,
-  gerçek GitHub Actions build'iyle en az bir kez derlenmiş yol. Bu güncellemede
-  yalnızca parametreleri (genişlik/yükseklik/kare/adım) sabit değişkenlerden
-  fonksiyon parametresine taşıdık; üretim mantığı DEĞİŞMEDİ.
-- **Backend'in tüm yeni akışları (capabilities, çoklu sahne + FFmpeg birleştirme,
-  reklam modu, toplu mod, geri uyumlu eski istemci çağrısı, feasibility guard):**
-  gerçek GPU olmadan, `torch`/`diffusers` sahte (stub) modüllerle uçtan uca
-  test edildi — HTTP akışı, job durumu geçişleri, sahne bölme matematiği ve
-  FFmpeg çağrısı doğru çalışıyor. **Gerçek Wan modeliyle, gerçek bir GPU'da
-  henüz doğrulanmadı.**
-- **Text-to-Video (Wan T2V):** tamamen YENİ kod, hiç çalıştırılmadı. `WanPipeline`
-  ile aynı bellek optimizasyonlarını kullanır ama gerçek bir üretim denemesi yapılmadı.
-- **`ALLOWED_COMBINATIONS` tablosu:** gerçek ölçüm değil, temkinli tahmin.
-- **Android tarafı:** Gradle/Android SDK bu ortamda mevcut olmadığı için
-  gerçek derleme burada yapılamadı (aynı sınırlama önceki turlarda da
-  belirtilmişti); GitHub Actions'a push edip sonucu kontrol etmeniz gerekiyor.
+- Studio agent sırası, provider fallback'i, proje kalıcılığı, açık görsel onayı,
+  onaylanan dosyanın video provider'ına aynen verilmesi ve kayıp job 404 sözleşmesi
+  otomatik backend testleriyle doğrulanır.
+- Android birim testleri ve Debug APK derlemesi her `main` gönderiminde GitHub
+  Actions üzerinde çalışır; artifact yalnız yeşil koşuda yayınlanır.
+- Gemini/Veo canlı çağrısı ücret/kota ve backend secret'ı gerektirdiği için CI'da
+  yapılmaz. REST istekleri Google'ın resmî model/uç sözleşmeleriyle uygulanmıştır.
+- CogVideoX için TorchAO yükleme-sırasında INT8 yapılandırması T5 encoder ve
+  transformer'a gerçekten geçirilir; bağımlılık ön kontrolü başarısızsa traceback
+  Colab'da görünür ve yalnız bu fallback kapatılır. Gerçek T4 model indirme,
+  quantization, inference ve VRAM sınırı GPU oturumunda ayrıca doğrulanmalıdır;
+  CUDA OOM oluşursa traceback ve bellek özeti gizlenmez.
+- Eski Wan Text-to-Video yolu ve `ALLOWED_COMBINATIONS` tablosu gerçek GPU ölçümü
+  değildir; bu yollar geriye uyumluluk için korunmuştur.
 
 ## v1'den kalan tasarım kararları (hâlâ geçerli)
 
