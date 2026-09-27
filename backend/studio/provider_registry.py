@@ -65,10 +65,16 @@ class ProviderRegistry:
             and provider.quota_state() != "exhausted"
         ]
 
-        def sort_key(provider: StudioProvider) -> Tuple[int, int, int]:
+        # FPRO Studio'da remote Gemini, kullanılabilir bir API anahtarı varsa
+        # görsel/vision işleri için daima yerel ağır fallback'lerden önce gelir.
+        # preferred yalnızca gerçekten kullanıcı tarafından seçilmişse öne alınır;
+        # varsayılan akış provider priority'sini izler.
+        def sort_key(provider: StudioProvider) -> Tuple[int, int, int, int]:
+            remote_first = 0 if provider.descriptor.remote else 1
             return (
                 0 if preferred and provider.descriptor.name == preferred else 1,
                 provider.descriptor.priority,
+                remote_first,
                 provider.descriptor.cost_tier,
             )
 
