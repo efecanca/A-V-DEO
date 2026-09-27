@@ -217,7 +217,7 @@ class GeminiImageProvider:
             "input": inputs,
             "response_format": {
                 "type": "image",
-                "mime_type": "image/png",
+                "mime_type": "image/jpeg",
                 "aspect_ratio": aspect_ratio,
                 "image_size": self.image_size,
             },
@@ -240,6 +240,9 @@ class GeminiImageProvider:
             raise ProviderError("Gemini Image görsel verisi çözülemedi.") from exc
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        # Google Interactions image endpoint currently returns JPEG for this response format.
+        # Store the bytes as JPEG even if the caller supplied a .png working name.
+        # PIL/clients identify it from the actual file contents.
         destination.write_bytes(image_bytes)
         return str(destination)
 
